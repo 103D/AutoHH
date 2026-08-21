@@ -1,4 +1,5 @@
 import os
+
 import pytest
 
 # Set test environment variables before importing app
@@ -31,6 +32,7 @@ async def db_session():
     """
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
+
     from app.core.config import settings
     from app.models.base import Base
 
