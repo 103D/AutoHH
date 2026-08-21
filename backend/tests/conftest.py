@@ -6,6 +6,23 @@ os.environ["DATABASE_URL"] = "postgresql+asyncpg://jobhunter:password@localhost:
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["AI_API_KEY"] = "test_key"
 
+
+@pytest.fixture(autouse=True)
+async def reset_db_engine():
+    """Reset database engine before and after each test to avoid event loop issues.
+
+    The global engine in app.core.database is created lazily and binds to
+    the event loop of the first call. pytest-asyncio creates a new loop
+    per test, so we must reset the engine to ensure it re-creates in the
+    current loop.
+    """
+    from app.core.database import reset_engine
+
+    reset_engine()
+    yield
+    reset_engine()
+
+
 # Database fixtures are optional, not autouse
 @pytest.fixture(scope="function")
 async def db_session():
@@ -56,8 +73,9 @@ async def cleanup_db(db_session):
         await db_session.execute(text("TRUNCATE TABLE jobs CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE match_results CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE notification_logs CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE applications CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE application_status_history CASCADE;"))
         await db_session.commit()
     except Exception:
         await db_session.rollback()
         # ignore missing tables
-        
