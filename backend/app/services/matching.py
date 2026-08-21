@@ -1,6 +1,6 @@
 """Job matching service for analyzing jobs against candidate profile."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -130,7 +130,6 @@ class MatchingService:
 
         recommendation = self.scoring.get_recommendation(final_score)
 
-        from datetime import UTC
         now = datetime.now(UTC).isoformat()
 
         match_data = {
