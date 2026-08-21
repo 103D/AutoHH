@@ -8,14 +8,17 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.database import async_session_maker
+from app.core.database import get_engine
 from app.repositories.job import JobSourceRepository
 from app.schemas.job import JobSourceCreate
 from app.services.job import JobSourceService
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 async def init_hh_source():
     """Initialize HeadHunter KZ source."""
-    async with async_session_maker() as session:
+    engine = get_engine()
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_factory() as session:
         try:
             repo = JobSourceRepository(session)
             service = JobSourceService(repo)
