@@ -59,14 +59,14 @@ class ScoringEngine:
         """Normalize skills/technologies from list or dict to a set of lowercase strings."""
         if value is None:
             return set()
-        
+
         if isinstance(value, dict):
             items = value.keys()
-        elif isinstance(value, (list, tuple, set)):
+        elif isinstance(value, list | tuple | set):
             items = value
         else:
             return set()
-            
+
         return {str(item).lower().strip() for item in items if item}
 
     def calculate_technical_score(self, candidate: CandidateProfile, job: Job) -> float:
@@ -85,7 +85,7 @@ class ScoringEngine:
         for skill in candidate_all:
             if skill in self.STOPWORDS and len(skill) < 4:
                 continue
-                
+
             skill_tokens = self._tokenize_text(skill)
             if skill_tokens & job_tokens:
                 matches += 1
