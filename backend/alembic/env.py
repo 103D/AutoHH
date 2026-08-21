@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.models.base import Base
 
 # Import all models here to ensure they're registered
-from app.models import candidate
+from app.models import application, candidate, job, matching, notification
 
 config = context.config
 

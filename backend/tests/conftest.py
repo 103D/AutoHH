@@ -6,15 +6,58 @@ os.environ["DATABASE_URL"] = "postgresql+asyncpg://jobhunter:password@localhost:
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["AI_API_KEY"] = "test_key"
 
-@pytest.fixture(scope="function", autouse=True)
-async def cleanup_db():
-    """Clean up database between tests."""
+# Database fixtures are optional, not autouse
+@pytest.fixture(scope="function")
+async def db_session():
+    """Create a fresh database session for each test with transaction rollback.
+    This fixture is only used by integration tests; unit tests should not depend on it.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.core.config import settings
+    from app.models.base import Base
+
+    # Create test engine
+    test_engine = create_async_engine(
+        str(settings.database_url),
+        echo=False,
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+
+    # Create tables if they don't exist
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # Create session factory
+    async_session = sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    # Provide session
+    async with async_session() as session:
+        yield session
+
+    # Cleanup
+    await test_engine.dispose()
+
+
+@pytest.fixture(scope="function")
+async def cleanup_db(db_session):
+    """Clean up database after test; only used by integration tests."""
     from sqlalchemy import text
-    from app.core.database import async_session_maker
-    
+
     yield
-    
-    # Truncate all tables after each test
-    async with async_session_maker() as session:
-        await session.execute(text("TRUNCATE TABLE candidate_profiles CASCADE;"))
-        await session.commit()
+
+    try:
+        await db_session.execute(text("TRUNCATE TABLE candidate_profiles CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE job_sources CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE jobs CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE match_results CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE notification_logs CASCADE;"))
+        await db_session.commit()
+    except Exception:
+        await db_session.rollback()
+        # ignore missing tables
+        

@@ -6,7 +6,11 @@ celery_app = Celery(
     "job_hunter",
     broker=str(settings.redis_url),
     backend=str(settings.redis_url),
-    include=["app.workers.tasks.fetch_jobs", "app.workers.tasks.analyze_jobs"]
+    include=[
+        "app.workers.tasks.fetch_jobs",
+        "app.workers.tasks.analyze_jobs",
+        "app.workers.tasks.notifications",
+    ],
 )
 
 celery_app.conf.update(

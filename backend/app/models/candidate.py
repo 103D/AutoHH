@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
+
 class CandidateProfile(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "candidate_profiles"
 
@@ -35,7 +36,7 @@ class CandidateProfile(Base, UUIDMixin, TimestampMixin):
     employment_types: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
     work_formats: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
     relocation_possible: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    business_trips_acceptable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    business_trips_acceptable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Resume versions
     resume_versions: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)

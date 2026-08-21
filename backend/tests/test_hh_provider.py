@@ -1,14 +1,14 @@
-import pytest
 
 from datetime import datetime
 
 from app.providers.jobs.hh_kz import HeadHunterKZProvider
 
+
 def test_parse_vacancy():
     """Test parsing HH API vacancy data."""
-    
+
     provider = HeadHunterKZProvider()
-    
+
     # Sample HH API response
     hh_data = {
         "id": "123456",
@@ -34,9 +34,9 @@ def test_parse_vacancy():
         "alternate_url": "https://hh.kz/vacancy/123456",
         "published_at": "2026-08-12T10:00:00+06:00"
     }
-    
+
     raw_job = provider._parse_vacancy(hh_data)
-    
+
     assert raw_job.external_id == "123456"
     assert raw_job.title == "Senior Python Developer"
     assert raw_job.company == "Tech Company"
@@ -53,9 +53,9 @@ def test_parse_vacancy():
 
 def test_parse_vacancy_minimal():
     """Test parsing vacancy with minimal data."""
-    
+
     provider = HeadHunterKZProvider()
-    
+
     hh_data = {
         "id": "789",
         "name": "Junior Developer",
@@ -68,9 +68,9 @@ def test_parse_vacancy_minimal():
         },
         "alternate_url": "https://hh.kz/vacancy/789"
     }
-    
+
     raw_job = provider._parse_vacancy(hh_data)
-    
+
     assert raw_job.external_id == "789"
     assert raw_job.title == "Junior Developer"
     assert raw_job.company == "StartUp"

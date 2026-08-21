@@ -4,6 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: jobhunter-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: jobhunter
       POSTGRES_PASSWORD: password
@@ -21,6 +22,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: jobhunter-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -34,7 +36,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: jobhunter-backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./backend:/app
     ports:
@@ -44,6 +47,12 @@ services:
       - REDIS_URL=redis://redis:6379/0
     env_file:
       - ./backend/.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,6 +64,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: jobhunter-worker
+    restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info
     volumes:
       - ./backend:/app
@@ -74,6 +84,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: jobhunter-beat
+    restart: unless-stopped
     command: celery -A app.workers.celery_app beat --loglevel=info
     volumes:
       - ./backend:/app
@@ -84,6 +95,39 @@ services:
       - ./backend/.env
     depends_on:
       redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jobhunter-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  db-backup:
+    image: postgres:16-alpine
+    container_name: jobhunter-backup
+    restart: unless-stopped
+    volumes:
+      - ./backups:/backups
+    environment:
+      - PGHOST=postgres
+      - PGUSER=jobhunter
+      - PGPASSWORD=password
+      - PGDATABASE=jobhunter
+    entrypoint: |
+      sh -c "while true; do
+        sleep 86400;
+        pg_dump -Fc > /backups/jobhunter_$$(date +%Y%m%d).dump;
+        find /backups -name 'jobhunter_*.dump' -mtime +7 -delete;
+      done"
+    depends_on:
+      postgres:
         condition: service_healthy
 
 volumes:

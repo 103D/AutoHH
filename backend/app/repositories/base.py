@@ -8,6 +8,7 @@ from app.models.base import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
 
+
 class BaseRepository(Generic[ModelType]):
     """Base repository with common CRUD operations."""
 
@@ -17,9 +18,7 @@ class BaseRepository(Generic[ModelType]):
 
     async def get(self, id: UUID) -> ModelType | None:
         """Get entity by ID."""
-        result = await self.session.execute(
-            select(self.model).where(self.model.id == id)
-        )
+        result = await self.session.execute(select(self.model).where(self.model.id == id))
         return result.scalar_one_or_none()
 
     async def get_multi(
@@ -28,9 +27,7 @@ class BaseRepository(Generic[ModelType]):
         limit: int = 100,
     ) -> list[ModelType]:
         """Get multiple entities."""
-        result = await self.session.execute(
-            select(self.model).offset(skip).limit(limit)
-        )
+        result = await self.session.execute(select(self.model).offset(skip).limit(limit))
         return list(result.scalars().all())
 
     async def create(self, obj_in: dict) -> ModelType:
@@ -46,7 +43,7 @@ class BaseRepository(Generic[ModelType]):
         for field, value in obj_in.items():
             if value is not None:
                 setattr(db_obj, field, value)
-        
+
         await self.session.flush()
         await self.session.refresh(db_obj)
         return db_obj

@@ -1,15 +1,16 @@
-import pytest
-
-from httpx import ASGITransport, AsyncClient
 from uuid import uuid4
 
+import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.main import app
+
 
 @pytest.mark.asyncio
 async def test_create_profile():
     """Test creating candidate profile."""
     user_id = uuid4()
-    
+
     profile_data = {
         "user_id": str(user_id),
         "desired_positions": ["Data Analyst", "BI Analyst"],
@@ -35,13 +36,13 @@ async def test_create_profile():
         "relocation_possible": False,
         "business_trips_acceptable": True,
     }
-    
+
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test"
     ) as client:
         response = await client.post("/api/v1/profile/", json=profile_data)
-        
+
         assert response.status_code == 201
         data = response.json()
         assert "id" in data
@@ -53,14 +54,14 @@ async def test_create_profile():
 async def test_get_profile():
     """Test getting candidate profile."""
     user_id = uuid4()
-    
+
     profile_data = {
         "user_id": str(user_id),
         "desired_positions": ["Data Analyst"],
         "skills": ["SQL"],
         "languages": {"English": "B2"},
     }
-    
+
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test"
@@ -70,13 +71,13 @@ async def test_get_profile():
         assert create_response.status_code == 201
         created_data = create_response.json()
         profile_id = created_data["id"]
-        
+
         # Get by ID
         get_response = await client.get(f"/api/v1/profile/{profile_id}")
         assert get_response.status_code == 200
         get_data = get_response.json()
         assert get_data["id"] == profile_id
-        
+
         # Get by user_id
         get_by_user_response = await client.get(f"/api/v1/profile/?user_id={user_id}")
         assert get_by_user_response.status_code == 200
@@ -87,7 +88,7 @@ async def test_get_profile():
 async def test_update_profile():
     """Test updating candidate profile."""
     user_id = uuid4()
-    
+
     profile_data = {
         "user_id": str(user_id),
         "desired_positions": ["Data Analyst"],
@@ -95,7 +96,7 @@ async def test_update_profile():
         "languages": {"English": "B2"},
         "experience_years": 2,
     }
-    
+
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test"
@@ -103,7 +104,7 @@ async def test_update_profile():
         # Create
         create_response = await client.post("/api/v1/profile/", json=profile_data)
         profile_id = create_response.json()["id"]
-        
+
         # Update
         update_data = {
             "experience_years": 3,
@@ -119,14 +120,14 @@ async def test_update_profile():
 async def test_delete_profile():
     """Test deleting candidate profile."""
     user_id = uuid4()
-    
+
     profile_data = {
         "user_id": str(user_id),
         "desired_positions": ["Data Analyst"],
         "skills": ["SQL"],
         "languages": {"English": "B2"},
     }
-    
+
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test"
@@ -134,11 +135,11 @@ async def test_delete_profile():
         # Create
         create_response = await client.post("/api/v1/profile/", json=profile_data)
         profile_id = create_response.json()["id"]
-        
+
         # Delete
         delete_response = await client.delete(f"/api/v1/profile/{profile_id}")
         assert delete_response.status_code == 204
-        
+
         # Verify deleted
         get_response = await client.get(f"/api/v1/profile/{profile_id}")
         assert get_response.status_code == 404
@@ -147,14 +148,14 @@ async def test_delete_profile():
 async def test_duplicate_profile():
     """Test creating duplicate profile fails."""
     user_id = uuid4()
-    
+
     profile_data = {
         "user_id": str(user_id),
         "desired_positions": ["Data Analyst"],
         "skills": ["SQL"],
         "languages": {"English": "B2"},
     }
-    
+
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test"
@@ -162,7 +163,7 @@ async def test_duplicate_profile():
         # Create first
         response1 = await client.post("/api/v1/profile/", json=profile_data)
         assert response1.status_code == 201
-        
+
         # Try to create duplicate
         response2 = await client.post("/api/v1/profile/", json=profile_data)
         assert response2.status_code == 409

@@ -2,7 +2,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, field_validator
+
 
 class JobSourceBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -10,14 +11,17 @@ class JobSourceBase(BaseModel):
     enabled: bool = True
     configuration: dict[str, Any] = Field(default_factory=dict)
 
+
 class JobSourceCreate(JobSourceBase):
     pass
+
 
 class JobSourceUpdate(BaseModel):
     name: str | None = None
     type: str | None = None
     enabled: bool | None = None
     configuration: dict[str, Any] | None = None
+
 
 class JobSourceResponse(JobSourceBase):
     id: UUID
@@ -28,29 +32,40 @@ class JobSourceResponse(JobSourceBase):
     error_count: int = 0
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = {"from_attributes": True}
+
 
 class JobBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     company: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=1)
-    
+
     location: str | None = None
     salary_min: int | None = Field(None, ge=0)
     salary_max: int | None = Field(None, ge=0)
     currency: str | None = Field(None, pattern="^[A-Z]{3}$")
-    
+
     employment_type: str | None = None
     work_format: str | None = None
-    
+
     url: str
     published_at: datetime | None = None
+
+    @field_validator("salary_max")
+    @classmethod
+    def validate_salary_range(cls, v: int | None, info) -> int | None:
+        salary_min = info.data.get("salary_min")
+        if v is not None and salary_min is not None and v < salary_min:
+            raise ValueError("salary_max must be greater than or equal to salary_min")
+        return v
+
 
 class JobCreate(JobBase):
     source_id: UUID
     external_id: str
     raw_data: dict[str, Any] = Field(default_factory=dict)
+
 
 class JobUpdate(BaseModel):
     title: str | None = None
@@ -64,30 +79,55 @@ class JobUpdate(BaseModel):
     work_format: str | None = None
     published_at: datetime | None = None
 
+    @field_validator("salary_max")
+    @classmethod
+    def validate_salary_range(cls, v: int | None, info) -> int | None:
+        salary_min = info.data.get("salary_min")
+        if v is not None and salary_min is not None and v < salary_min:
+            raise ValueError("salary_max must be greater than or equal to salary_min")
+        return v
+
+
 class JobResponse(JobBase):
     id: UUID
     source_id: UUID
     external_id: str
-    
+
     first_seen_at: datetime
     last_seen_at: datetime
-    
+
     content_hash: str
     url_normalized: str
-    
+
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = {"from_attributes": True}
+
+
+class JobFilter(BaseModel):
+    """Filter parameters for job search."""
+
+    company: str | None = None
+    location: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    currency: str | None = None
+    employment_type: str | None = None
+    work_format: str | None = None
+    search: str | None = None  # Full-text search in title/description
+    published_after: datetime | None = None
+
 
 class RawJob(BaseModel):
     """Raw job data from external source before normalization."""
+
     external_id: str
     title: str
     company: str
     description: str
     url: str
-    
+
     location: str | None = None
     salary_min: int | None = None
     salary_max: int | None = None
@@ -95,5 +135,5 @@ class RawJob(BaseModel):
     employment_type: str | None = None
     work_format: str | None = None
     published_at: datetime | None = None
-    
+
     raw_data: dict[str, Any] = Field(default_factory=dict)

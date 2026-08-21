@@ -1,5 +1,6 @@
-from pydantic import Field, PostgresDsn, RedisDsn
+from pydantic import Field, PostgresDsn, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -48,11 +49,27 @@ class Settings(BaseSettings):
     # API
     api_v1_prefix: str = "/api/v1"
     secret_key: str = Field(default="change-me-in-production")
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
     # Logging
     log_level: str = "INFO"
 
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        if v == "change-me-in-production":
+            import warnings
+
+            warnings.warn(
+                "Using default secret key. Set SECRET_KEY environment variable in production!",
+                UserWarning,
+                stacklevel=2,
+            )
+        return v
+
+
 def get_settings() -> Settings:
     return Settings()
+
 
 settings = get_settings()

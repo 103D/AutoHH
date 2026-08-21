@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 
+
 @pytest.mark.asyncio
 async def test_health_check():
     """Test health check endpoint."""
@@ -11,8 +12,11 @@ async def test_health_check():
         base_url="http://test"
     ) as client:
         response = await client.get("/health")
-        
+
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "ok"
+        # Status can be "healthy" or "degraded" depending on DB/Redis availability
+        assert data["status"] in ["healthy", "degraded"]
         assert "version" in data
+        assert "database" in data
+        assert "redis" in data

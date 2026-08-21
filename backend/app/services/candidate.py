@@ -5,6 +5,7 @@ from app.models.candidate import CandidateProfile
 from app.repositories.candidate import CandidateRepository
 from app.schemas.candidate import CandidateProfileCreate, CandidateProfileUpdate
 
+
 class CandidateService:
     """Service for candidate profile business logic."""
 
@@ -31,7 +32,7 @@ class CandidateService:
         existing = await self.repository.get_by_user_id(profile_in.user_id)
         if existing:
             raise DuplicateError(f"Profile already exists for user {profile_in.user_id}")
-        
+
         profile_data = profile_in.model_dump()
         return await self.repository.create(profile_data)
 
@@ -42,7 +43,7 @@ class CandidateService:
     ) -> CandidateProfile:
         """Update candidate profile."""
         profile = await self.get_profile(profile_id)
-        
+
         update_data = profile_in.model_dump(exclude_unset=True)
         return await self.repository.update(profile, update_data)
 
