@@ -11,6 +11,8 @@ export interface Job {
   currency: string | null
   employment_type: string | null
   work_format: string | null
+  experience_required: number | null
+  specializations: string[] | null
   url: string | null
   published_at: string | null
   first_seen_at: string
@@ -22,6 +24,7 @@ export interface JobSource {
   name: string
   type: string
   enabled: boolean
+  consecutive_errors?: number
 }
 
 export interface SkillMatch {
@@ -36,6 +39,7 @@ export interface MatchResult {
   score: number
   recommendation: string
   user_override_recommendation?: string | null
+  hard_failures: string[]
   matched_skills: SkillMatch[]
   missing_skills: string[]
   strong_matches: string[]
@@ -54,6 +58,7 @@ export type MatchCategory =
   | 'MARKET_RESEARCH'
   | 'LEARNING_OPPORTUNITY'
   | 'IGNORE'
+  | 'NOT_ELIGIBLE'
 
 export const CATEGORY_LABELS_RU: Record<string, string> = {
   DREAM_JOB: '🔥 Работа мечты',
@@ -62,6 +67,7 @@ export const CATEGORY_LABELS_RU: Record<string, string> = {
   MARKET_RESEARCH: '📊 Изучение рынка',
   LEARNING_OPPORTUNITY: '🎓 Чему учиться',
   IGNORE: '💤 Пропустить',
+  NOT_ELIGIBLE: '⛔ Не подходит',
 }
 
 export const MATCH_CATEGORIES: MatchCategory[] = [
@@ -71,6 +77,7 @@ export const MATCH_CATEGORIES: MatchCategory[] = [
   'MARKET_RESEARCH',
   'LEARNING_OPPORTUNITY',
   'IGNORE',
+  'NOT_ELIGIBLE',
 ]
 
 export interface StretchAnalysis {
@@ -227,4 +234,77 @@ export interface CandidateProfile {
 export interface ResumeVersion {
   name: string
   content: string
+}
+
+// === Resume profiles (Phase 3) ===
+
+export const SPECIALIZATIONS = [
+  'DATA_ANALYST',
+  'BI_ANALYST',
+  'PRODUCT_ANALYST',
+  'RETAIL_COMMERCIAL_ANALYST',
+] as const
+
+export type Specialization = (typeof SPECIALIZATIONS)[number]
+
+export interface ResumeProfile {
+  id: string
+  candidate_profile_id: string
+  specialization: Specialization
+  profile_name: string
+  headline: string | null
+  summary: string | null
+  selected_skills: string[]
+  selected_experience_ids: string[]
+  selected_project_ids: string[]
+  specialization_keywords: string[]
+  generated_content: string | null
+  is_active: boolean
+}
+
+export interface ResumeProfileScore {
+  resume_profile_id: string
+  profile_name: string
+  specialization: string
+  score: number
+  reasons: string[]
+}
+
+export interface ResumeRecommendation {
+  recommended_profile_id: string | null
+  recommended_profile_name: string | null
+  recommended_specialization: string | null
+  job_specializations: string[]
+  scores: ResumeProfileScore[]
+  reasons: string[]
+}
+
+// === Manual import (PROMPT.MD DoD #5) ===
+
+export interface ManualJobCreate {
+  title: string
+  company: string
+  description: string
+  location?: string | null
+  salary_min?: number | null
+  salary_max?: number | null
+  currency?: string | null
+  employment_type?: string | null
+  work_format?: string | null
+  experience_required?: number | null
+  url?: string | null
+}
+
+export interface ManualJobImportResponse {
+  job: Job
+  status: 'created' | 'duplicate'
+  duplicate_of?: string | null
+}
+
+export interface SoftMatchResponse {
+  score: number
+  recommendation: string
+  score_breakdown: Record<string, number>
+  matched_skills: string[]
+  missing_skills: string[]
 }

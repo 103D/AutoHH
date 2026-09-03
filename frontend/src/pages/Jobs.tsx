@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { jobsApi, sourcesApi } from '../api/client'
-import type { Job, JobSource } from '../types'
+import type { Job, JobSource, MatchResult, ManualJobImportResponse } from '../types'
+import ManualImportModal from '../components/ManualImportModal'
+import MatchResultCard from '../components/MatchResultCard'
 
 export default function Jobs() {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -11,6 +13,9 @@ export default function Jobs() {
   const [source, setSource] = useState('')
   const [sources, setSources] = useState<JobSource[]>([])
   const [limit, setLimit] = useState(20)
+  const [showImport, setShowImport] = useState(false)
+  const [matchResults, setMatchResults] = useState<Record<string, MatchResult>>({})
+  const [analyzing, setAnalyzing] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     async function loadJobs() {
@@ -41,6 +46,27 @@ export default function Jobs() {
     }
     loadSources()
   }, [])
+
+  const handleAnalyze = async (jobId: string) => {
+    setAnalyzing((prev) => ({ ...prev, [jobId]: true }))
+    try {
+      const result = await jobsApi.analyzeNew(jobId)
+      setMatchResults((prev) => ({ ...prev, [jobId]: result }))
+    } catch {
+      setMatchResults((prev) => {
+        const next = { ...prev }
+        delete next[jobId]
+        return next
+      })
+    } finally {
+      setAnalyzing((prev) => ({ ...prev, [jobId]: false }))
+    }
+  }
+
+  const handleImportSuccess = (result: ManualJobImportResponse) => {
+    setShowImport(false)
+    setJobs((prev) => [result.job, ...prev])
+  }
 
   return (
     <div className="space-y-4">
@@ -75,6 +101,13 @@ export default function Jobs() {
           <option value={50}>50</option>
           <option value={100}>100</option>
         </select>
+        <button
+          type="button"
+          onClick={() => setShowImport(true)}
+          className="px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700"
+        >
+          + Import Vacancy
+        </button>
       </div>
 
       {error && (
@@ -93,41 +126,62 @@ export default function Jobs() {
       ) : (
         <div className="bg-white rounded-lg shadow divide-y divide-gray-200">
           {jobs.map((job) => (
-            <Link
-              key={job.id}
-              to={`/jobs/${job.id}`}
-              className="block px-4 py-3 hover:bg-gray-50"
-            >
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-gray-900">
-                    {job.title}
-                  </h3>
-                  <p className="text-sm text-gray-500">{job.company}</p>
-                  <div className="flex gap-3 mt-1 text-xs text-gray-400">
-                    <span>{job.source}</span>
-                    {job.location && <span>• {job.location}</span>}
-                    {job.work_format && <span>• {job.work_format}</span>}
+            <div key={job.id} className="px-4 py-3 hover:bg-gray-50">
+              <Link to={`/jobs/${job.id}`} className="block">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-gray-900">
+                      {job.title}
+                    </h3>
+                    <p className="text-sm text-gray-500">{job.company}</p>
+                    <div className="flex gap-3 mt-1 text-xs text-gray-400">
+                      <span>{job.source}</span>
+                      {job.location && <span>• {job.location}</span>}
+                      {job.work_format && <span>• {job.work_format}</span>}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {job.salary_min && (
+                      <p className="text-sm text-gray-600">
+                        {job.salary_min}
+                        {job.salary_max ? `–${job.salary_max}` : ''}{' '}
+                        {job.currency || ''}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400">
+                      {job.published_at
+                        ? new Date(job.published_at).toLocaleDateString()
+                        : ''}
+                    </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  {job.salary_min && (
-                    <p className="text-sm text-gray-600">
-                      {job.salary_min}
-                      {job.salary_max ? `–${job.salary_max}` : ''}{' '}
-                      {job.currency || ''}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-400">
-                    {job.published_at
-                      ? new Date(job.published_at).toLocaleDateString()
-                      : ''}
-                  </p>
-                </div>
+              </Link>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleAnalyze(job.id)
+                  }}
+                  disabled={analyzing[job.id]}
+                  className="px-2 py-1 text-xs font-medium text-indigo-600 border border-indigo-300 rounded hover:bg-indigo-50 disabled:opacity-50"
+                >
+                  {analyzing[job.id] ? 'Analyzing...' : '⚡ Analyze'}
+                </button>
+                {matchResults[job.id] && (
+                  <MatchResultCard result={matchResults[job.id]} />
+                )}
               </div>
-            </Link>
+            </div>
           ))}
         </div>
+      )}
+      {showImport && (
+        <ManualImportModal
+          onClose={() => setShowImport(false)}
+          onSuccess={handleImportSuccess}
+        />
       )}
     </div>
   )

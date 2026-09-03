@@ -9,10 +9,15 @@ import type {
   Job,
   JobSource,
   LearningRoadmap,
+  ManualJobCreate,
+  ManualJobImportResponse,
   MarketOverview,
   MatchResult,
+  ResumeProfile,
+  ResumeRecommendation,
   ResumeVersion,
   SkillGap,
+  SoftMatchResponse,
   StatusHistory,
 } from '../types'
 
@@ -25,9 +30,19 @@ const api = axios.create({
 export const jobsApi = {
   list: (params?: Record<string, any>) => api.get<Job[]>('/jobs/', { params }).then((r) => r.data),
   get: (id: string) => api.get<Job>(`/jobs/${id}`).then((r) => r.data),
+  createManual: (data: ManualJobCreate) =>
+    api.post<ManualJobImportResponse>('/jobs/manual', data).then((r) => r.data),
   analyze: (jobId: string, candidateProfileId?: string) =>
     api.post<MatchResult>(`/matching/jobs/${jobId}/analyze`, null, {
       params: candidateProfileId ? { candidate_profile_id: candidateProfileId } : {},
+    }).then((r) => r.data),
+  softMatch: (jobId: string, candidateProfileId?: string) =>
+    api.post<SoftMatchResponse>(`/matching/match`, null, {
+      params: { job_id: jobId, ...(candidateProfileId ? { candidate_profile_id: candidateProfileId } : {}) },
+    }).then((r) => r.data),
+  analyzeNew: (jobId: string, candidateProfileId?: string) =>
+    api.post<MatchResult>(`/matching/analyze`, null, {
+      params: { job_id: jobId, ...(candidateProfileId ? { candidate_profile_id: candidateProfileId } : {}) },
     }).then((r) => r.data),
   getMatch: (jobId: string, candidateProfileId?: string) =>
     api.get<MatchResult | null>(`/matching/jobs/${jobId}/match`, {
@@ -101,6 +116,34 @@ export const matchingApi = {
     api.delete<MatchResult>(`/matching/jobs/${jobId}/recommendation`).then((r) => r.data),
   gaps: (jobId: string) =>
     api.get<GapAnalysis>(`/matching/jobs/${jobId}/gaps`).then((r) => r.data),
+  recommendResume: (jobId: string, candidateProfileId?: string) =>
+    api
+      .post<ResumeRecommendation>(`/matching/jobs/${jobId}/recommend-resume`, {
+        params: candidateProfileId
+          ? { candidate_profile_id: candidateProfileId }
+          : {},
+      })
+      .then((r) => r.data),
+}
+
+// === Resume profiles (Phase 3: Master CV -> specialized profiles) ===
+export const resumeProfilesApi = {
+  list: (profileId: string) =>
+    api
+      .get<ResumeProfile[]>(`/profile/${profileId}/resume-profiles`)
+      .then((r) => r.data),
+  create: (profileId: string, data: Partial<ResumeProfile>) =>
+    api
+      .post<ResumeProfile>(`/profile/${profileId}/resume-profiles`, data)
+      .then((r) => r.data),
+  get: (resumeProfileId: string) =>
+    api.get<ResumeProfile>(`/resume-profiles/${resumeProfileId}`).then((r) => r.data),
+  update: (resumeProfileId: string, data: Partial<ResumeProfile>) =>
+    api
+      .put<ResumeProfile>(`/resume-profiles/${resumeProfileId}`, data)
+      .then((r) => r.data),
+  delete: (resumeProfileId: string) =>
+    api.delete(`/resume-profiles/${resumeProfileId}`),
 }
 
 // === Analytics (career intelligence v2) ===
