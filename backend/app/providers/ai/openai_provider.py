@@ -8,7 +8,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.providers.ai.base import MatchResult
+from app.providers.ai.base import MatchResult, ParsedResume
 
 logger = get_logger(__name__)
 
@@ -33,6 +33,18 @@ IMPORTANT RULES:
 Respond ONLY with valid JSON matching the specified schema."""
 
 
+RESUME_PARSE_SYSTEM_PROMPT = """You are an expert resume parser. Extract structured data from resume text.
+
+IMPORTANT RULES:
+1. Extract ONLY facts explicitly stated in the resume - never invent anything
+2. If a field is not mentioned in the resume, return null or an empty list
+3. Normalize skill names to their canonical English form where the meaning is obvious
+4. Keep education, languages and location values in their original language
+5. Compute experience_years from the stated work history dates
+
+Respond ONLY with valid JSON matching the specified schema."""
+
+
 class OpenAIProvider:
     """OpenAI API provider for job matching."""
 
@@ -42,12 +54,17 @@ class OpenAIProvider:
         model: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        base_url: str | None = None,
     ):
         self.api_key = api_key or settings.ai_api_key
         self.model = model or settings.ai_model
         self.max_tokens = max_tokens or settings.ai_max_tokens
         self.temperature = temperature or settings.ai_temperature
-        self.base_url = "https://api.openai.com/v1"
+        # Allow a custom base URL (e.g. OmniRoute, OpenRouter-compatible proxies).
+        self.base_url = (
+            (base_url or settings.ai_base_url or "").rstrip("/")
+            or "https://api.openai.com/v1"
+        )
         self.timeout = 60.0
         self.max_retries = 3
         self.retry_delay = 1.0
@@ -211,6 +228,83 @@ Be objective and realistic in your assessment."""
             raise
         except Exception as e:
             logger.error(f"OpenAI provider error: {e}")
+            raise
+
+    def _build_resume_parse_prompt(self, resume_text: str) -> str:
+        """Build the resume parsing prompt."""
+        return f"""Parse this resume and extract structured data.
+
+RESUME TEXT:
+{resume_text}
+
+Provide your result as JSON with this exact structure:
+{{
+  "full_name": "string or null",
+  "desired_positions": ["position1", "position2"],
+  "skills": ["skill1", "skill2"],
+  "technologies": {{"languages": ["..."], "databases": ["..."], "analytics": ["..."], "tools": ["..."]}},
+  "experience_years": <integer or null>,
+  "education": [
+    {{"degree": "string or null", "field": "string or null", "institution": "string or null", "graduation_year": <integer or null>}}
+  ],
+  "languages": {{"language": "level"}},
+  "location": "string or null",
+  "salary_expectations": {{"min": <integer or null>, "max": <integer or null>, "currency": "KZT"}},
+  "employment_types": ["full_time", "part_time", "contract", "internship"],
+  "work_formats": ["office", "remote", "hybrid"],
+  "relocation_possible": true/false,
+  "business_trips_acceptable": true/false,
+  "summary": "short professional summary or null"
+}}
+
+Normalization rules:
+- employment_types: only values from full_time, part_time, contract, internship, volunteer, probation
+- work_formats: only values from office, remote, hybrid
+- languages: {{"language": "level"}} where level is CEFR (A1-C2) or "native"
+- experience_years: derive from stated work history (e.g. "Опыт работы — 2 года 2 месяца" -> 2)
+- salary_expectations: null when the resume does not mention salary
+
+Extract only facts stated in the resume text."""
+
+    async def parse_resume(self, resume_text: str) -> ParsedResume:
+        """Parse raw resume text into structured data using OpenAI."""
+        prompt = self._build_resume_parse_prompt(resume_text)
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                data = await self._request_with_retry(
+                    client,
+                    {
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": RESUME_PARSE_SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": self.max_tokens,
+                        "temperature": 0.1,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+
+                content = data["choices"][0]["message"]["content"]
+                result_data = json.loads(content)
+
+                # Extract usage and cost
+                usage = data.get("usage", {})
+                tokens_used, cost_usd = self._calculate_cost(usage)
+
+                result = ParsedResume(**result_data)
+                logger.info(
+                    f"OpenAI resume parsing: positions={len(result.desired_positions)}, "
+                    f"skills={len(result.skills)}, tokens={tokens_used}"
+                )
+                return result
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse OpenAI resume response: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"OpenAI resume parsing error: {e}")
             raise
 
     async def adapt_resume(

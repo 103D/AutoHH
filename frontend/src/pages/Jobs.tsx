@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { jobsApi } from '../api/client'
-import type { Job } from '../types'
+import { jobsApi, sourcesApi } from '../api/client'
+import type { Job, JobSource } from '../types'
 
 export default function Jobs() {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -9,6 +9,7 @@ export default function Jobs() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [source, setSource] = useState('')
+  const [sources, setSources] = useState<JobSource[]>([])
   const [limit, setLimit] = useState(20)
 
   useEffect(() => {
@@ -29,6 +30,18 @@ export default function Jobs() {
     loadJobs()
   }, [search, source, limit])
 
+  useEffect(() => {
+    const loadSources = async () => {
+      try {
+        const data = await sourcesApi.list({ enabled_only: true })
+        setSources(data)
+      } catch {
+        setSources([])
+      }
+    }
+    loadSources()
+  }, [])
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
@@ -48,7 +61,9 @@ export default function Jobs() {
           className="px-3 py-2 border border-gray-300 rounded-md text-sm"
         >
           <option value="">All sources</option>
-          <option value="hh_kz">HeadHunter KZ</option>
+          {sources.map((s) => (
+            <option key={s.id} value={s.type}>{s.name}</option>
+          ))}
         </select>
         <select
           value={limit}

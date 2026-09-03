@@ -4,7 +4,7 @@ Production-ready система автоматического поиска ра
 
 ## Возможности
 
-- **Сбор вакансий** — автоматический фетчинг с HeadHunter KZ, нормализация и 3-уровневая дедупликация
+- **Сбор вакансий** — автоматический фетчинг с HeadHunter KZ, Habr Career, Zarplata, RemoteOK, SuperJob и manual (LinkedIn/referrals), нормализация и 3-уровневая дедупликация
 - **AI-матчинг** — гибридный scoring (детерминированный + AI semantic analysis) с retry и fallback провайдером
 - **Адаптация резюме** — AI-powered tailoring с anti-hallucination валидацией (запрет выдумывать опыт/навыки)
 - **Cover Letter** — генерация в разных стилях, проверка фактов против профиля
@@ -47,8 +47,8 @@ docker compose up -d --build
 # 4. Применить миграции
 docker exec jobhunter-backend alembic upgrade head
 
-# 5. Инициализировать источник вакансий
-docker exec jobhunter-backend python scripts/init_hh_source.py
+# 5. Инициализировать источники вакансий (все провайдеры: HH и альтернативы)
+docker exec jobhunter-backend python scripts/init_job_sources.py
 ```
 
 ### Сервисы

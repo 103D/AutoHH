@@ -7,7 +7,10 @@ from pydantic import BaseModel, Field, field_validator
 
 class JobSourceBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    type: str = Field(..., pattern="^(api|scraper)$")
+    # type is the provider key consumed by create_job_provider (e.g. hh_kz, remote_ok),
+    # not an abstract "api"/"scraper" category.
+
+    type: str = Field(..., min_length=1, max_length=50)
     enabled: bool = True
     configuration: dict[str, Any] = Field(default_factory=dict)
 
@@ -91,6 +94,7 @@ class JobUpdate(BaseModel):
 class JobResponse(JobBase):
     id: UUID
     source_id: UUID
+    source: str | None = None  # Populated via join with job_sources (not a DB column)
     external_id: str
 
     first_seen_at: datetime
@@ -117,6 +121,7 @@ class JobFilter(BaseModel):
     work_format: str | None = None
     search: str | None = None  # Full-text search in title/description
     published_after: datetime | None = None
+    source: str | None = None  # Job source type (e.g.hh_kz, remote_ok, habr_career)
 
 
 class RawJob(BaseModel):

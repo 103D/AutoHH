@@ -46,6 +46,45 @@ class MatchResult(BaseModel):
     )
 
 
+class ParsedEducation(BaseModel):
+    """Education entry extracted from a resume."""
+
+    degree: str | None = None
+    field: str | None = None
+    institution: str | None = None
+    graduation_year: int | None = Field(default=None, ge=1950, le=2100)
+
+
+class ParsedSalaryExpectations(BaseModel):
+    """Salary expectations extracted from a resume."""
+
+    min: int | None = Field(default=None, ge=0)
+    max: int | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, pattern="^[A-Z]{3}$")
+
+
+class ParsedResume(BaseModel):
+    """Structured data extracted from raw resume text."""
+
+    full_name: str | None = None
+    desired_positions: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    technologies: dict[str, list[str]] = Field(default_factory=dict)
+    experience_years: int | None = Field(default=None, ge=0, le=50)
+    experience_level: str | None = Field(
+        default=None, pattern="^(junior|middle|senior|lead)$"
+    )
+    education: list[ParsedEducation] = Field(default_factory=list)
+    languages: dict[str, str] = Field(default_factory=dict)
+    location: str | None = None
+    salary_expectations: ParsedSalaryExpectations | None = None
+    employment_types: list[str] = Field(default_factory=list)
+    work_formats: list[str] = Field(default_factory=list)
+    relocation_possible: bool = False
+    business_trips_acceptable: bool = False
+    summary: str | None = None
+
+
 class AIProvider(Protocol):
     """Abstract interface for AI providers."""
 
@@ -115,5 +154,17 @@ class AIProvider(Protocol):
 
         Returns:
             Generated cover letter text
+        """
+        ...
+
+    async def parse_resume(self, resume_text: str) -> ParsedResume:
+        """
+        Parse raw resume text into structured data.
+
+        Args:
+            resume_text: Full resume text
+
+        Returns:
+            ParsedResume with extracted structured data
         """
         ...

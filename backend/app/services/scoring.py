@@ -7,6 +7,7 @@ from typing import Any
 from app.core.config import settings
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
+from app.models.matching import MatchCategory
 
 
 @dataclass
@@ -343,11 +344,16 @@ class ScoringEngine:
         return round(final_score, 1), breakdown
 
     def get_recommendation(self, score: float) -> str:
-        if score >= settings.threshold_high_priority:
-            return "HIGH_PRIORITY"
-        elif score >= settings.threshold_apply:
-            return "APPLY"
-        elif score >= settings.threshold_review:
-            return "REVIEW"
+        """Map a numeric score to a match category (matching v2)."""
+        if score >= settings.threshold_dream_job:
+            return MatchCategory.DREAM_JOB
+        elif score >= settings.threshold_stretch:
+            return MatchCategory.STRETCH
+        elif score >= settings.threshold_solid_match:
+            return MatchCategory.SOLID_MATCH
+        elif score >= settings.threshold_market_research:
+            return MatchCategory.MARKET_RESEARCH
+        elif score >= settings.threshold_learning:
+            return MatchCategory.LEARNING_OPPORTUNITY
         else:
-            return "IGNORE"
+            return MatchCategory.IGNORE

@@ -7,20 +7,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.exceptions import DuplicateError, NotFoundError
+from app.core.exceptions import DuplicateError, NotFoundError, ValidationError
 from app.repositories.application import (
     ApplicationRepository,
     ApplicationStatusHistoryRepository,
 )
 from app.repositories.candidate import CandidateRepository
 from app.repositories.job import JobRepository
+from app.repositories.matching import MatchResultRepository
 from app.schemas.application import (
     ApplicationCreate,
     ApplicationResponse,
     ApplicationUpdate,
+    PackageResponse,
     StatusHistoryResponse,
 )
 from app.services.application import ApplicationService
+from app.services.application_package import ApplicationPackageService
 from app.services.candidate import CandidateService
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -65,6 +68,19 @@ async def create_application(
         return await service.create_application(app_in)
     except DuplicateError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from None
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
+@router.get("/by-job/{job_id}", response_model=ApplicationResponse | None)
+async def get_application_by_job(
+    job_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get the default candidate's application for a job (or null)."""
+    service = get_application_service(session)
+    try:
+        return await service.get_application_for_job(job_id)
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
 
@@ -122,3 +138,48 @@ async def get_status_history(
         return await service.get_status_history(application_id)
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
+@router.post("/{application_id}/prepare-package", response_model=PackageResponse)
+async def prepare_package(
+    application_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Generate the application package for a job.
+
+    Adapts the original resume, writes a cover letter, validates both against
+    hallucinations, computes the diff/improvement metrics and stores
+    everything in the application (status -> PREPARED).
+    """
+    service = get_application_service(session)
+    package_service = ApplicationPackageService(
+        service,
+        JobRepository(session),
+        MatchResultRepository(session),
+    )
+    try:
+        application = await package_service.build_package(application_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+
+    return PackageResponse(**application.package_data, application_id=application.id)
+
+
+@router.get("/{application_id}/package", response_model=PackageResponse | None)
+async def get_package(
+    application_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get the previously generated application package (if any)."""
+    service = get_application_service(session)
+    try:
+        application = await service.get_application(application_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+    if not application.package_data:
+        return None
+    return PackageResponse(**application.package_data, application_id=application.id)

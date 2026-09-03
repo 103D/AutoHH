@@ -26,7 +26,8 @@ class ApplicationUpdate(BaseModel):
 
     status: str | None = Field(
         None,
-        description="DRAFT, READY, APPLIED, SCREENING, INTERVIEW, "
+        description="v2: DISCOVERED, SAVED, PREPARED, MANUALLY_APPLIED, SKIPPED; "
+        "legacy: DRAFT, READY, APPLIED, SCREENING, INTERVIEW, "
         "TECHNICAL_INTERVIEW, OFFER, REJECTED, WITHDRAWN, NO_RESPONSE",
     )
     cover_letter: str | None = None
@@ -60,6 +61,32 @@ class StatusHistoryResponse(BaseModel):
     changed_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PackageDiff(BaseModel):
+    """Diff between original and adapted resume."""
+
+    added_lines: int = 0
+    removed_lines: int = 0
+    unified_diff: str = ""
+
+
+class PackageResponse(BaseModel):
+    """Generated application package (adapted resume + cover letter)."""
+
+    application_id: UUID
+    adapted_resume: str
+    cover_letter: str
+    diff: PackageDiff
+    keyword_coverage: dict[str, float] = Field(
+        default_factory=dict, description="Job-keyword coverage before/after adaptation"
+    )
+    improvement_score: float = Field(
+        description="Coverage improvement in percentage points"
+    )
+    validation: dict = Field(default_factory=dict)
+    generated_at: str
+    ai_model: str | None = None
 
 
 class ApplicationStatistics(BaseModel):

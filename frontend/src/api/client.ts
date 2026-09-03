@@ -1,11 +1,18 @@
 import axios from 'axios'
 import type {
   Application,
+  ApplicationPackage,
   ApplicationStatistics,
   CandidateProfile,
+  DreamJobs,
+  GapAnalysis,
   Job,
+  JobSource,
+  LearningRoadmap,
+  MarketOverview,
   MatchResult,
   ResumeVersion,
+  SkillGap,
   StatusHistory,
 } from '../types'
 
@@ -28,11 +35,19 @@ export const jobsApi = {
     }).then((r) => r.data),
 }
 
+// === Job Sources ===
+export const sourcesApi = {
+  list: (params?: Record<string, any>) =>
+    api.get<JobSource[]>('/jobs/sources/', { params }).then((r) => r.data),
+}
+
 // === Applications ===
 export const applicationsApi = {
   list: (params?: Record<string, any>) =>
     api.get<Application[]>('/applications/', { params }).then((r) => r.data),
   get: (id: string) => api.get<Application>(`/applications/${id}`).then((r) => r.data),
+  getByJob: (jobId: string) =>
+    api.get<Application | null>(`/applications/by-job/${jobId}`).then((r) => r.data),
   create: (data: { job_id: string; cover_letter?: string; notes?: string }) =>
     api.post<Application>('/applications/', data).then((r) => r.data),
   update: (id: string, data: Record<string, any>) =>
@@ -43,6 +58,10 @@ export const applicationsApi = {
     api.get<ApplicationStatistics>('/applications/statistics', {
       params: candidateProfileId ? { candidate_profile_id: candidateProfileId } : {},
     }).then((r) => r.data),
+  preparePackage: (id: string) =>
+    api.post<ApplicationPackage>(`/applications/${id}/prepare-package`).then((r) => r.data),
+  getPackage: (id: string) =>
+    api.get<ApplicationPackage | null>(`/applications/${id}/package`).then((r) => r.data),
 }
 
 // === Profile ===
@@ -74,6 +93,34 @@ export const matchingApi = {
     style?: string
   }) =>
     api.post('/matching/cover-letter', data).then((r) => r.data),
+  overrideRecommendation: (jobId: string, recommendation: string) =>
+    api.put<MatchResult>(`/matching/jobs/${jobId}/recommendation`, { recommendation }).then(
+      (r) => r.data,
+    ),
+  clearRecommendationOverride: (jobId: string) =>
+    api.delete<MatchResult>(`/matching/jobs/${jobId}/recommendation`).then((r) => r.data),
+  gaps: (jobId: string) =>
+    api.get<GapAnalysis>(`/matching/jobs/${jobId}/gaps`).then((r) => r.data),
+}
+
+// === Analytics (career intelligence v2) ===
+export const analyticsApi = {
+  marketOverview: (candidateProfileId?: string) =>
+    api.get<MarketOverview>('/analytics/market-overview', {
+      params: candidateProfileId ? { candidate_profile_id: candidateProfileId } : {},
+    }).then((r) => r.data),
+  skillGap: (candidateProfileId?: string) =>
+    api.get<SkillGap>('/analytics/skill-gap', {
+      params: candidateProfileId ? { candidate_profile_id: candidateProfileId } : {},
+    }).then((r) => r.data),
+  learningRoadmap: (candidateProfileId?: string) =>
+    api.get<LearningRoadmap>('/analytics/learning-roadmap', {
+      params: candidateProfileId ? { candidate_profile_id: candidateProfileId } : {},
+    }).then((r) => r.data),
+  dreamJobs: (candidateProfileId?: string) =>
+    api.get<DreamJobs>('/analytics/dream-jobs', {
+      params: candidateProfileId ? { candidate_profile_id: candidateProfileId } : {},
+    }).then((r) => r.data),
 }
 
 export default api

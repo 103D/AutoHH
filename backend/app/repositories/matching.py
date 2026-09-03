@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.matching import MatchResult
+from app.models.matching import MatchCategory, MatchResult
 from app.repositories.base import BaseRepository
 
 
@@ -42,7 +42,9 @@ class MatchResultRepository(BaseRepository[MatchResult]):
             select(self.model)
             .where(
                 self.model.candidate_profile_id == candidate_profile_id,
-                self.model.recommendation == "HIGH_PRIORITY",
+                self.model.recommendation.in_(
+                    [MatchCategory.DREAM_JOB, MatchCategory.STRETCH]
+                ),
             )
             .order_by(desc(self.model.analyzed_at))
             .limit(limit)
@@ -53,16 +55,42 @@ class MatchResultRepository(BaseRepository[MatchResult]):
         self, candidate_profile_id: UUID, limit: int = 20
     ) -> list[MatchResult]:
         """Get matches that haven't been notified yet (for notification worker)."""
-        # This would need a notification_logs table to track what was sent
-        # For now, return recent high-priority matches
+        # Actionable categories only: worth showing to the user
         from sqlalchemy import desc
         result = await self.session.execute(
             select(self.model)
             .where(
                 self.model.candidate_profile_id == candidate_profile_id,
-                self.model.recommendation.in_(["HIGH_PRIORITY", "APPLY"]),
+                self.model.recommendation.in_(
+                    [
+                        MatchCategory.DREAM_JOB,
+                        MatchCategory.STRETCH,
+                        MatchCategory.SOLID_MATCH,
+                    ]
+                ),
             )
             .order_by(desc(self.model.analyzed_at))
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_effective_top(
+        self, candidate_profile_id: UUID, categories: list[str], limit: int = 5
+    ) -> list[MatchResult]:
+        """Get top matches by score within the given categories.
+
+        Both the computed category and the manual user override are accepted,
+        so overridden jobs are included in daily digests.
+        """
+        from sqlalchemy import desc
+        result = await self.session.execute(
+            select(self.model)
+            .where(
+                self.model.candidate_profile_id == candidate_profile_id,
+                self.model.recommendation.in_(categories)
+                | self.model.user_override_recommendation.in_(categories),
+            )
+            .order_by(desc(self.model.score))
             .limit(limit)
         )
         return list(result.scalars().all())

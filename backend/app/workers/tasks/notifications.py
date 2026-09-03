@@ -1,6 +1,10 @@
 """Celery task for sending Telegram notifications about job matches."""
 
-from app.core.database import async_session_maker
+from datetime import UTC, datetime
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.database import get_engine
 from app.core.logging import get_logger
 from app.repositories.job import JobRepository
 from app.repositories.matching import MatchResultRepository
@@ -21,7 +25,13 @@ def send_notifications(limit: int = 20) -> dict:
 
 async def _send_notifications_async(limit: int) -> dict:
     """Async implementation of notification sending."""
-    async with async_session_maker() as session:
+    engine = get_engine()
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
         try:
             match_repo = MatchResultRepository(session)
             notification_repo = NotificationRepository(session)
@@ -76,7 +86,6 @@ async def _send_notifications_async(limit: int) -> dict:
                 if message_id:
                     notification.telegram_message_id = message_id
                     notification.status = "sent"
-                    from datetime import UTC, datetime
 
                     notification.sent_at = datetime.now(UTC)
                     sent_count += 1
@@ -99,5 +108,95 @@ async def _send_notifications_async(limit: int) -> dict:
 
         except Exception as e:
             logger.error(f"Error in send_notifications: {e}")
+            await session.rollback()
+            return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="send_daily_digest")
+def send_daily_digest(limit: int = 5) -> dict:
+    """Send the daily top-5 digest to Telegram (career intelligence v2)."""
+    import asyncio
+
+    return asyncio.run(_send_daily_digest_async(limit))
+
+
+async def _send_daily_digest_async(limit: int) -> dict:
+    """Async implementation of the daily digest."""
+    engine = get_engine()
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
+        try:
+            from sqlalchemy import select
+
+            from app.models.candidate import CandidateProfile
+            from app.models.matching import MatchCategory
+            from app.repositories.job import JobRepository
+            from app.repositories.matching import MatchResultRepository
+            from app.repositories.notification import NotificationRepository
+            from app.services.telegram_v2 import (
+                TelegramDigestAdapter,
+                select_daily_top,
+            )
+
+            result = await session.execute(select(CandidateProfile).limit(1))
+            profile = result.scalar_one_or_none()
+            if not profile:
+                logger.info("No candidate profile found, skipping daily digest")
+                return {"status": "success", "sent": 0, "message": "No profile"}
+
+            match_repo = MatchResultRepository(session)
+            notification_repo = NotificationRepository(session)
+            job_repo = JobRepository(session)
+
+            actionable = await match_repo.get_effective_top(
+                profile.id,
+                categories=[
+                    MatchCategory.DREAM_JOB,
+                    MatchCategory.STRETCH,
+                    MatchCategory.SOLID_MATCH,
+                ],
+                limit=50,
+            )
+
+            # Keep only matches never notified before
+            fresh: list[tuple] = []
+            for match in actionable:
+                if await notification_repo.get_by_match_result(match.id):
+                    continue
+                job = await job_repo.get(match.job_id)
+                if job:
+                    fresh.append((match, job))
+
+            top = select_daily_top(fresh, limit=limit)
+            if not top:
+                logger.info("No new actionable matches for the daily digest")
+                return {"status": "success", "sent": 0, "message": "Nothing to send"}
+
+            telegram = TelegramDigestAdapter()
+            message_id = await telegram.send_daily_digest(top)
+
+            digest_status = "sent" if message_id else "failed"
+            for match, _job in top:
+                notification = await notification_repo.create(
+                    {
+                        "match_result_id": match.id,
+                        "status": digest_status,
+                        "error": None if message_id else "Failed to send daily digest",
+                    }
+                )
+                if message_id:
+                    notification.telegram_message_id = message_id
+                    notification.sent_at = datetime.now(UTC)
+
+            await session.commit()
+            logger.info(f"Daily digest: sent={len(top)} (status={digest_status})")
+            return {"status": "success", "sent": len(top), "message_id": message_id}
+
+        except Exception as e:
+            logger.error(f"Error in send_daily_digest: {e}")
             await session.rollback()
             return {"status": "error", "message": str(e)}

@@ -39,6 +39,9 @@ async def list_jobs(
     published_after: datetime | None = Query(
         None, description="Filter jobs published after this date"
     ),
+    source: str | None = Query(
+        None, description="Filter by job source type (e.g.hh_kz, habr_career, remote_ok, zarplata, superjob, manual)"
+    ),
 ):
     """List all jobs with pagination and filters."""
     repo = JobRepository(session)
@@ -55,6 +58,7 @@ async def list_jobs(
         work_format=work_format,
         search=search,
         published_after=published_after,
+        source=source,
     )
 
     # Check if any filter is set
@@ -70,6 +74,7 @@ async def list_jobs(
             work_format,
             search,
             published_after,
+            source,
         ]
     )
 

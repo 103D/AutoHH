@@ -17,8 +17,10 @@ from app.services.candidate import CandidateService
 logger = get_logger(__name__)
 
 VALID_STATUSES = {
+    "DISCOVERED", "SAVED", "PREPARED", "MANUALLY_APPLIED",
     "DRAFT", "READY", "APPLIED", "SCREENING", "INTERVIEW",
-    "TECHNICAL_INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN", "NO_RESPONSE",
+    "TECHNICAL_INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN",
+    "NO_RESPONSE", "SKIPPED",
 }
 
 
@@ -134,12 +136,59 @@ class ApplicationService:
         logger.info(f"Application {application_id} updated: status={application.status}")
         return application
 
+    async def get_application_for_job(self, job_id: UUID) -> Application | None:
+        """Get the default candidate's application for a job (or None)."""
+        profiles = await self.candidate_service.repository.get_multi(0, 1)
+        if not profiles:
+            raise NotFoundError("No candidate profile found")
+        return await self.application_repo.get_by_job_and_candidate(
+            job_id, profiles[0].id
+        )
+
     async def get_status_history(
         self, application_id: UUID
     ) -> list[ApplicationStatusHistory]:
         """Get status history for an application."""
         await self.get_application(application_id)
         return await self.history_repo.get_for_application(application_id)
+
+    async def save_job_from_telegram(
+        self,
+        job_id: UUID,
+        status: str = "SAVED",
+        comment: str | None = None,
+    ) -> Application:
+        """Get-or-create an application for the default candidate with a status.
+
+        Used by Telegram callback actions ([Пакет] -> SAVED/PREPARED,
+        [Пропустить] -> SKIPPED).
+        """
+        profiles = await self.candidate_service.repository.get_multi(0, 1)
+        if not profiles:
+            raise NotFoundError("No candidate profile found")
+        profile = profiles[0]
+
+        existing = await self.application_repo.get_by_job_and_candidate(
+            job_id, profile.id
+        )
+        if existing:
+            if status != existing.status:
+                return await self.update_application(
+                    existing.id,
+                    ApplicationUpdate(status=status, comment=comment),
+                )
+            return existing
+
+        application = await self.create_application(
+            ApplicationCreate(job_id=job_id, candidate_profile_id=profile.id)
+        )
+        if status != "DRAFT":
+            application = await self.update_application(
+                application.id,
+                ApplicationUpdate(status=status, comment=comment),
+            )
+        logger.info(f"Job {job_id} saved via Telegram with status {status}")
+        return application
 
     async def get_statistics(
         self, candidate_profile_id: UUID | None = None

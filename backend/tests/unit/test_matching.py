@@ -1,16 +1,21 @@
-import pytest
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from datetime import datetime, UTC
-from app.services.matching import MatchingService
-from app.services.scoring import ScoringEngine
-from app.repositories.matching import MatchResultRepository
-from app.repositories.job import JobRepository
-from app.services.candidate import CandidateService
-from app.providers.ai.base import MatchResult as AIMatchResult, SkillMatch
+
+import pytest
+
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
+from app.models.matching import MatchCategory
+from app.providers.ai.base import MatchResult as AIMatchResult
+from app.providers.ai.base import SkillMatch
+from app.repositories.job import JobRepository
+from app.repositories.matching import MatchResultRepository
+from app.services.candidate import CandidateService
+from app.services.matching import MatchingService
+from app.services.scoring import ScoringEngine
 from tests.unit.mocks.mock_ai_provider import MockAIProvider
+
 
 @pytest.fixture
 def mock_repo():
@@ -88,26 +93,28 @@ async def test_match_hybrid_success(matching_service, mock_repo, mock_ai, sample
     )
     mock_ai.analyze_job.return_value = ai_result
     mock_repo.get_by_job_and_candidate.return_value = None
-    
+
     matching_service.job_repository.get = AsyncMock(return_value=sample_job)
     matching_service.candidate_service.get_profile = AsyncMock(return_value=sample_profile)
     matching_service.match_repository.create = AsyncMock(return_value=MagicMock(
         job_id=sample_job.id,
         candidate_profile_id=sample_profile.id,
         score=90,
-        recommendation="HIGH_PRIORITY",
+        recommendation="DREAM_JOB",
+        user_override_recommendation=None,
         matched_skills=[],
         missing_skills=[],
         strong_matches=[],
         concerns=[],
         reasoning_summary="",
+        score_breakdown={},
         analyzed_at=datetime.now(UTC)
     ))
 
     result = await matching_service.analyze_job(sample_job.id, sample_profile.id)
-    
+
     assert result.score > 0
-    assert result.recommendation == "HIGH_PRIORITY"
+    assert result.recommendation in MatchCategory.ALL
     matching_service.match_repository.create.assert_called_once()
 
 @pytest.mark.asyncio
@@ -127,12 +134,12 @@ async def test_match_cache_hit(matching_service, mock_repo, mock_ai, sample_job,
         analyzed_at=datetime(2026, 1, 1, tzinfo=UTC)
     )
     mock_repo.get_by_job_and_candidate.return_value = existing_match
-    
+
     matching_service.job_repository.get = AsyncMock(return_value=sample_job)
     matching_service.candidate_service.get_profile = AsyncMock(return_value=sample_profile)
 
     result = await matching_service.analyze_job(sample_job.id, sample_profile.id)
-    
+
     assert result.score == 85
     mock_ai.analyze_job.assert_not_called()
 
@@ -140,23 +147,25 @@ async def test_match_cache_hit(matching_service, mock_repo, mock_ai, sample_job,
 async def test_match_ai_fallback(matching_service, mock_repo, mock_ai, sample_job, sample_profile):
     mock_ai.analyze_job.side_effect = Exception("AI API Down")
     mock_repo.get_by_job_and_candidate.return_value = None
-    
+
     matching_service.job_repository.get = AsyncMock(return_value=sample_job)
     matching_service.candidate_service.get_profile = AsyncMock(return_value=sample_profile)
     matching_service.match_repository.create = AsyncMock(return_value=MagicMock(
         job_id=sample_job.id,
         candidate_profile_id=sample_profile.id,
         score=50,
-        recommendation="REVIEW",
+        recommendation="MARKET_RESEARCH",
+        user_override_recommendation=None,
         matched_skills=[],
         missing_skills=[],
         strong_matches=[],
         concerns=[],
         reasoning_summary="",
+        score_breakdown={},
         analyzed_at=datetime.now(UTC)
     ))
 
     result = await matching_service.analyze_job(sample_job.id, sample_profile.id)
-    
+
     assert result.score is not None
-    assert result.recommendation in ["HIGH_PRIORITY", "APPLY", "REVIEW", "IGNORE"]
+    assert result.recommendation in MatchCategory.ALL

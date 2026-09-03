@@ -1,0 +1,77 @@
+name: Local Assistant
+version: 1.0.0
+name: Local Assistant
+version: 1.0.0
+schema: v1
+models:
+  - name: Llama 3.1 8B
+    provider: ollama
+    model: llama3.1:8b
+    roles:
+      - chat
+      - edit
+      - apply
+      - autocomplete
+      - rerank
+  - name: LLM
+    provider: ollama
+    model: Autodetect
+    roles:
+      - autocomplete
+  - name: Nomic Embed
+    provider: ollama
+    model: nomic-embed-text:latest
+    roles:
+      - embed
+  - name: OmniRoute Auto
+    provider: openai
+    apiBase: http://localhost:20128/v1
+    apiKey: ${sk-fc7dbeff8bb987dc-7a9c29-458181bc}
+    model: oc/nemotron-3-ultra-free
+    capabilities:
+    - tool_use
+    defaultCompletionOptions:
+      maxTokens: 8192
+    roles:
+      - chat
+      - edit
+      - apply
+      - autocomplete
+  - name: OmniRoute Phi-4
+    provider: openai
+    apiBase: http://localhost:20128/v1
+    apiKey: ${sk-fc7dbeff8bb987dc-7a9c29-458181bc}
+    model: kr/deepseek-3.2
+    # model: agentrouter/claude-opus-5
+  - name: "AI21: Jamba Large 1.7"
+    provider: openrouter
+    model: ai21/jamba-large-1.7
+    apiKey: sk-fe8dbc6e506e2873-fdacdf-4fa88c77
+    defaultCompletionOptions:
+      maxTokens: 8192
+    capabilities:
+      - tool_use
+    roles:
+      - rerank
+  - name: Autodetect
+    provider: lmstudio
+    model: AUTODETECT
+    apiBase: http://localhost:1234/v1/
+  - name: Autodetect (1)
+    provider: ollama
+    model: AUTODETECT
+  - name: Autodetect (2)
+    provider: ollama
+    model: AUTODETECT
+# sk-fc7dbeff8bb987dc-7a9c29-458181bc
+
+# 1. Mistral — 9.5/10
+# 2. Gemini — 9.3/10
+# 3. GitHub Models — 9.0/10
+# 4. Groq — 8.9/10
+# 5. Cerebras — 8.8/10
+# 6. SiliconFlow — 8.4/10
+# 7. Z.AI — 8.3/10
+# 8. NVIDIA — 8.1/10
+# 9. Kilo Gateway — 8.0/10
+# 10. OpenRouter — 7.9/10

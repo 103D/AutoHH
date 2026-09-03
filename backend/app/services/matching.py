@@ -8,12 +8,15 @@ from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
 from app.models.candidate import CandidateProfile
+from app.models.job import Job
+from app.models.matching import MatchCategory, MatchResult
 from app.providers.ai.factory import create_ai_provider
 from app.repositories.job import JobRepository
 from app.repositories.matching import MatchResultRepository
-from app.schemas.matching import MatchResultResponse
+from app.schemas.matching import GapAnalysisResponse, GapItem, MatchResultResponse
 from app.services.candidate import CandidateService
 from app.services.scoring import ScoringEngine
+from app.services.stretch_classifier import StretchClassifier
 
 logger = get_logger(__name__)
 
@@ -28,12 +31,14 @@ class MatchingService:
         match_repository: MatchResultRepository,
         ai_provider: Any = None,
         scoring_engine: ScoringEngine = None,
+        stretch_classifier: StretchClassifier | None = None,
     ):
         self.job_repository = job_repository
         self.candidate_service = candidate_service
         self.match_repository = match_repository
         self.ai_provider = ai_provider or create_ai_provider()
         self.scoring = scoring_engine or ScoringEngine()
+        self.stretch_classifier = stretch_classifier or StretchClassifier()
 
     async def get_default_candidate_profile(self) -> CandidateProfile:
         """Get the first candidate profile (assumes single user for now)."""
@@ -62,18 +67,7 @@ class MatchingService:
         existing = await self.match_repository.get_by_job_and_candidate(job_id, profile.id)
         if existing:
             logger.info(f"Job {job_id} already analyzed for profile {profile.id}, returning cached")
-            return MatchResultResponse(
-                job_id=existing.job_id,
-                candidate_profile_id=existing.candidate_profile_id,
-                score=existing.score,
-                recommendation=existing.recommendation,
-                matched_skills=existing.matched_skills,
-                missing_skills=existing.missing_skills,
-                strong_matches=existing.strong_matches,
-                concerns=existing.concerns,
-                reasoning_summary=existing.reasoning_summary,
-                analyzed_at=existing.analyzed_at,
-            )
+            return self._to_response(existing)
 
         final_score, breakdown = self.scoring.calculate(profile, job)
 
@@ -130,6 +124,14 @@ class MatchingService:
 
         recommendation = self.scoring.get_recommendation(final_score)
 
+        # Stretch classification (deterministic, no extra AI calls)
+        stretch = self.stretch_classifier.analyze(profile, job, final_score)
+        if stretch.is_stretch and recommendation in (
+            MatchCategory.STRETCH,
+            MatchCategory.SOLID_MATCH,
+        ):
+            recommendation = MatchCategory.STRETCH
+
         now = datetime.now(UTC).isoformat()
 
         match_data = {
@@ -142,7 +144,7 @@ class MatchingService:
             "strong_matches": ai_result.strong_matches if ai_result else [],
             "concerns": ai_result.concerns if ai_result else [],
             "reasoning_summary": ai_result.reasoning_summary if ai_result else "Deterministic analysis only",
-            "score_breakdown": breakdown.to_dict(),
+            "score_breakdown": {**breakdown.to_dict(), "stretch": stretch.to_dict()},
             "ai_provider": settings.ai_provider if ai_result else None,
             "ai_model": settings.ai_model if ai_result else None,
             "ai_tokens_used": ai_tokens,
@@ -152,18 +154,7 @@ class MatchingService:
 
         match_result = await self.match_repository.create(match_data)
 
-        return MatchResultResponse(
-            job_id=match_result.job_id,
-            candidate_profile_id=match_result.candidate_profile_id,
-            score=match_result.score,
-            recommendation=match_result.recommendation,
-            matched_skills=match_result.matched_skills,
-            missing_skills=match_result.missing_skills,
-            strong_matches=match_result.strong_matches,
-            concerns=match_result.concerns,
-            reasoning_summary=match_result.reasoning_summary,
-            analyzed_at=match_result.analyzed_at,
-        )
+        return self._to_response(match_result)
 
     async def analyze_pending_jobs(
         self,
@@ -197,17 +188,136 @@ class MatchingService:
         match = await self.match_repository.get_by_job_and_candidate(job_id, candidate_profile_id)
         if not match:
             return None
+        return self._to_response(match)
+
+    @staticmethod
+    def effective_recommendation(match: MatchResult) -> str:
+        """User override wins over the computed category."""
+        return match.user_override_recommendation or match.recommendation
+
+    def _to_response(self, match: MatchResult) -> MatchResultResponse:
+        """Convert a MatchResult model into a response schema."""
+        breakdown = match.score_breakdown or {}
         return MatchResultResponse(
             job_id=match.job_id,
             candidate_profile_id=match.candidate_profile_id,
             score=match.score,
             recommendation=match.recommendation,
+            user_override_recommendation=match.user_override_recommendation,
             matched_skills=match.matched_skills,
             missing_skills=match.missing_skills,
             strong_matches=match.strong_matches,
             concerns=match.concerns,
-            reasoning_summary=match.reasoning_summary,
+            reasoning_summary=match.reasoning_summary or "",
+            stretch_analysis=breakdown.get("stretch"),
             analyzed_at=match.analyzed_at,
+        )
+
+    async def set_recommendation_override(
+        self,
+        job_id: UUID,
+        candidate_profile_id: UUID | None,
+        category: str,
+    ) -> MatchResultResponse:
+        """Manually override the match category for a job."""
+        profile_id = candidate_profile_id or (await self.get_default_candidate_profile()).id
+        match = await self.match_repository.get_by_job_and_candidate(job_id, profile_id)
+        if not match:
+            raise NotFoundError(
+                f"No match result for job {job_id}. Analyze the job first."
+            )
+        updated = await self.match_repository.update(
+            match, {"user_override_recommendation": category}
+        )
+        logger.info(
+            f"User override: job {job_id} -> {category} "
+            f"(was {updated.recommendation})"
+        )
+        return self._to_response(updated)
+
+    async def clear_recommendation_override(
+        self,
+        job_id: UUID,
+        candidate_profile_id: UUID | None = None,
+    ) -> MatchResultResponse:
+        """Remove the manual category override."""
+        profile_id = candidate_profile_id or (await self.get_default_candidate_profile()).id
+        match = await self.match_repository.get_by_job_and_candidate(job_id, profile_id)
+        if not match:
+            raise NotFoundError(f"No match result for job {job_id}")
+        updated = await self.match_repository.update(
+            match, {"user_override_recommendation": None}
+        )
+        return self._to_response(updated)
+
+    def _build_gaps(
+        self,
+        profile: CandidateProfile,
+        job: Job,
+        match: MatchResult,
+    ) -> list[GapItem]:
+        """Build the skill/experience gap list for a job."""
+        gaps: list[GapItem] = []
+
+        missing = list(match.missing_skills or [])
+        if not missing:
+            missing = self.stretch_classifier.find_missing_key_skills(profile, job)
+        for skill in missing[:10]:
+            gaps.append(GapItem(skill=skill, gap_type="missing", priority="high"))
+
+        required_years = self.stretch_classifier.extract_required_experience(job)
+        if required_years and profile.experience_years is not None:
+            if required_years > profile.experience_years:
+                gaps.append(
+                    GapItem(
+                        skill=f"{required_years}+ years experience",
+                        gap_type="experience",
+                        priority="medium",
+                    )
+                )
+        return gaps
+
+    async def get_gap_analysis(
+        self,
+        job_id: UUID,
+        candidate_profile_id: UUID | None = None,
+    ) -> GapAnalysisResponse:
+        """Return a skill-gap analysis for a specific job."""
+        job = await self.job_repository.get(job_id)
+        if not job:
+            raise NotFoundError(f"Job {job_id} not found")
+
+        if candidate_profile_id:
+            profile = await self.candidate_service.get_profile(candidate_profile_id)
+        else:
+            profile = await self.get_default_candidate_profile()
+
+        match = await self.match_repository.get_by_job_and_candidate(job_id, profile.id)
+        if not match:
+            raise NotFoundError(
+                f"No match result for job {job_id}. Analyze the job first."
+            )
+
+        stretch = self.stretch_classifier.analyze(profile, job, match.score)
+        gaps = self._build_gaps(profile, job, match)
+        effective = self.effective_recommendation(match)
+
+        summary = (
+            f"Score {match.score} ({effective}). "
+            f"{len(gaps)} gap(s) identified."
+        )
+        if stretch.is_stretch:
+            summary += " Realistic stretch opportunity."
+
+        return GapAnalysisResponse(
+            job_id=job_id,
+            candidate_profile_id=profile.id,
+            score=match.score,
+            recommendation=match.recommendation,
+            effective_recommendation=effective,
+            gaps=gaps,
+            stretch_analysis=stretch.to_dict(),
+            summary=summary,
         )
 
     async def match_resume_to_job(

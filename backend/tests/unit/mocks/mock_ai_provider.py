@@ -1,9 +1,11 @@
 from unittest.mock import AsyncMock
-from app.providers.ai.base import AIProvider, MatchResult, SkillMatch
+
+from app.providers.ai.base import AIProvider, MatchResult
+
 
 class MockAIProvider(AIProvider):
     """Mock AI provider for unit testing matching logic."""
-    
+
     def __init__(self, default_result: MatchResult | None = None):
         self.analyze_job = AsyncMock(return_value=default_result)
         self.adapt_resume = AsyncMock(return_value="Adapted resume text")

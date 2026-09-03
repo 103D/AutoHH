@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.job import RawJob
 
@@ -20,6 +21,20 @@ class HeadHunterKZProvider:
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.timeout = self.config.get("timeout", 30)
+        # Allow per-source override; fallback to settings.hh_user_agent
+        self.user_agent = (
+            self.config.get("user_agent")
+            or getattr(settings, "hh_user_agent", None)
+            or "JobHunter/0.1.0 (https://github.com/103D/AutoHH)"
+        )
+
+    def _client_headers(self) -> dict[str, str]:
+        """Common HTTP headers required by the HH API."""
+        return {
+            "User-Agent": self.user_agent,
+            "HH-User-Agent": self.user_agent,
+            "Accept": "application/json",
+        }
 
     async def fetch_jobs(self, filters: dict | None = None, limit: int = 100) -> list[RawJob]:
         """
@@ -57,6 +72,7 @@ class HeadHunterKZProvider:
             async with httpx.AsyncClient(
                 timeout=self.timeout,
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+                headers=self._client_headers(),
             ) as client:
                 response = await client.get(f"{self.BASE_URL}/vacancies", params=params)
 
@@ -85,7 +101,9 @@ class HeadHunterKZProvider:
         """Fetch detailed vacancy information."""
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self.timeout, headers=self._client_headers()
+            ) as client:
                 response = await client.get(f"{self.BASE_URL}/vacancies/{external_id}")
 
                 if response.status_code == 429:

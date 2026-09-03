@@ -5,7 +5,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.exceptions import AIProviderError
 from app.core.logging import get_logger
-from app.providers.ai.base import AIProvider, MatchResult
+from app.providers.ai.base import AIProvider, MatchResult, ParsedResume
 from app.providers.ai.openai_provider import OpenAIProvider
 
 logger = get_logger(__name__)
@@ -37,6 +37,16 @@ class FallbackAIProvider:
                 return await self.fallback.analyze_job(
                     job_title, job_company, job_description, job_requirements, candidate_profile
                 )
+            raise
+
+    async def parse_resume(self, resume_text: str) -> ParsedResume:
+        """Try primary provider, fallback on failure."""
+        try:
+            return await self.primary.parse_resume(resume_text)
+        except Exception as e:
+            if self.fallback:
+                logger.warning(f"Primary AI provider failed, using fallback: {e}")
+                return await self.fallback.parse_resume(resume_text)
             raise
 
     async def adapt_resume(
@@ -124,6 +134,7 @@ def create_ai_provider(
             model=config.get("model") or settings.openrouter_model,
             max_tokens=config.get("max_tokens") or settings.ai_max_tokens,
             temperature=config.get("temperature") or settings.ai_temperature,
+            base_url=config.get("base_url") or settings.ai_base_url,
         )
     else:
         primary = provider_class(
@@ -131,6 +142,7 @@ def create_ai_provider(
             model=config.get("model") or settings.ai_model,
             max_tokens=config.get("max_tokens") or settings.ai_max_tokens,
             temperature=config.get("temperature") or settings.ai_temperature,
+            base_url=config.get("base_url") or settings.ai_base_url,
         )
 
     # Build fallback provider if alternative is configured
@@ -142,6 +154,7 @@ def create_ai_provider(
             model=settings.openrouter_model,
             max_tokens=settings.ai_max_tokens,
             temperature=settings.ai_temperature,
+            base_url=settings.ai_base_url,
         )
     elif provider_type == "openrouter" and settings.ai_api_key != "placeholder":
         logger.info("Configuring OpenAI as fallback AI provider")
@@ -150,6 +163,7 @@ def create_ai_provider(
             model=settings.ai_model,
             max_tokens=settings.ai_max_tokens,
             temperature=settings.ai_temperature,
+            base_url=settings.ai_base_url,
         )
 
     if fallback:

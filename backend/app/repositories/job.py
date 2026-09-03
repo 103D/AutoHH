@@ -59,8 +59,13 @@ class JobRepository(BaseRepository[Job]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[Job]:
-        """Get jobs with filters."""
-        query = select(self.model)
+        """Get jobs with filters.
+
+        The source type is joined from ``job_sources`` and attached as a transient
+        ``Job.source`` attribute (not a DB column), so the API can expose it to clients).
+
+        """
+        query = select(Job, JobSource.type).join(JobSource, Job.source_id == JobSource.id)
 
         if filters.company:
             query = query.where(self.model.company.ilike(f"%{filters.company}%"))
@@ -92,7 +97,18 @@ class JobRepository(BaseRepository[Job]):
         if filters.published_after:
             query = query.where(self.model.published_at >= filters.published_after)
 
+        if filters.source:
+            query = query.where(JobSource.type == filters.source)
+
         query = query.order_by(self.model.published_at.desc()).offset(skip).limit(limit)
 
         result = await self.session.execute(query)
-        return list(result.scalars().all())
+        rows = result.all()
+
+        jobs: list[Job] = []
+        for job, source_type in rows:
+            # Attach the source type so JobResponse can expose it (not a DB column)..
+            job.source = source_type
+            jobs.append(job)
+
+        return jobs

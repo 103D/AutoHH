@@ -2,7 +2,9 @@
 
 from uuid import UUID
 
-from app.core.database import async_session_maker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.database import get_engine
 from app.core.logging import get_logger
 from app.repositories.candidate import CandidateRepository
 from app.repositories.job import JobRepository
@@ -29,7 +31,13 @@ async def _analyze_job_async(job_id: UUID) -> dict:
     """
     Async implementation of job analysis.
     """
-    async with async_session_maker() as session:
+    engine = get_engine()
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
         try:
             job_repo = JobRepository(session)
             candidate_repo = CandidateRepository(session)
@@ -75,7 +83,13 @@ async def _analyze_new_jobs_async(limit: int) -> dict:
     """
     Async implementation of batch job analysis.
     """
-    async with async_session_maker() as session:
+    engine = get_engine()
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
         try:
             job_repo = JobRepository(session)
             candidate_repo = CandidateRepository(session)

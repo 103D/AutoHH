@@ -6,6 +6,35 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 
+class MatchCategory:
+    """Match recommendation categories (matching v2).
+
+    Categories replace the old HIGH_PRIORITY/APPLY/REVIEW/IGNORE scale:
+    - DREAM_JOB: apply immediately, excellent fit
+    - STRETCH: growth opportunity slightly above current level (~10% offer chance)
+    - SOLID_MATCH: comfortable application with high fit
+    - MARKET_RESEARCH: not applying now, but a useful market signal
+    - LEARNING_OPPORTUNITY: shows in-demand skills worth learning
+    - IGNORE: no value for the candidate
+    """
+
+    DREAM_JOB = "DREAM_JOB"
+    STRETCH = "STRETCH"
+    SOLID_MATCH = "SOLID_MATCH"
+    MARKET_RESEARCH = "MARKET_RESEARCH"
+    LEARNING_OPPORTUNITY = "LEARNING_OPPORTUNITY"
+    IGNORE = "IGNORE"
+
+    ALL: list[str] = [
+        DREAM_JOB,
+        STRETCH,
+        SOLID_MATCH,
+        MARKET_RESEARCH,
+        LEARNING_OPPORTUNITY,
+        IGNORE,
+    ]
+
+
 class MatchResult(Base, UUIDMixin, TimestampMixin):
     """Match analysis result between a job and candidate profile."""
 
@@ -28,6 +57,9 @@ class MatchResult(Base, UUIDMixin, TimestampMixin):
 
     # Recommendation level
     recommendation: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Manual category override set by the user (takes precedence over recommendation)
+    user_override_recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # AI Analysis - using ARRAY for PostgreSQL
     matched_skills: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)

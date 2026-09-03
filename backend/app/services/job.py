@@ -53,9 +53,8 @@ class JobService:
         limit: int = 100,
         filters: JobFilter | None = None,
     ) -> list[Job]:
-        if filters:
-            return await self.repository.get_filtered(filters, skip, limit)
-        return await self.repository.get_multi(skip, limit)
+        # Always go trough get_filtered (it joins job_sources и exposes the source type)。
+        return await self.repository.get_filtered(filters or JobFilter(), skip, limit)
 
     async def create_job(self, job_in: JobCreate) -> Job:
         # Compute deduplication fields

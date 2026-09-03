@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.core.database import async_session_maker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.database import get_engine
 from app.core.logging import get_logger
 from app.providers.jobs.factory import create_job_provider
 from app.repositories.job import JobRepository, JobSourceRepository
@@ -27,7 +29,13 @@ async def _fetch_jobs_from_source_async(source_id: UUID) -> dict:
     """
     Async implementation of job fetching.
     """
-    async with async_session_maker() as session:
+    engine = get_engine()
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
         source = None
         try:
             # Get source
@@ -124,7 +132,13 @@ async def _fetch_jobs_from_all_sources_async() -> dict:
     """
     Async implementation of fetching from all sources.
     """
-    async with async_session_maker() as session:
+    engine = get_engine()
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
         try:
             source_repo = JobSourceRepository(session)
             source_service = JobSourceService(source_repo)

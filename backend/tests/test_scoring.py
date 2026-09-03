@@ -276,13 +276,21 @@ def test_full_scoring_calculation(sample_candidate, sample_job):
 
 
 def test_recommendation_thresholds():
-    """Test recommendation level determination."""
+    """Test match category determination (matching v2)."""
     engine = ScoringEngine()
 
-    assert engine.get_recommendation(95) == "HIGH_PRIORITY"
-    assert engine.get_recommendation(85) == "APPLY"
-    assert engine.get_recommendation(70) == "REVIEW"
-    assert engine.get_recommendation(40) == "IGNORE"
+    assert engine.get_recommendation(95) == "DREAM_JOB"
+    assert engine.get_recommendation(85) == "DREAM_JOB"
+    assert engine.get_recommendation(84) == "STRETCH"
+    assert engine.get_recommendation(70) == "STRETCH"
+    assert engine.get_recommendation(69) == "SOLID_MATCH"
+    assert engine.get_recommendation(55) == "SOLID_MATCH"
+    assert engine.get_recommendation(54) == "MARKET_RESEARCH"
+    assert engine.get_recommendation(40) == "MARKET_RESEARCH"
+    assert engine.get_recommendation(39) == "LEARNING_OPPORTUNITY"
+    assert engine.get_recommendation(25) == "LEARNING_OPPORTUNITY"
+    assert engine.get_recommendation(24) == "IGNORE"
+    assert engine.get_recommendation(0) == "IGNORE"
 
 
 def test_score_breakdown_to_dict():

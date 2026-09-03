@@ -15,7 +15,9 @@ from app.repositories.matching import MatchResultRepository
 from app.schemas.matching import (
     CoverLetterRequest,
     CoverLetterResponse,
+    GapAnalysisResponse,
     MatchResultResponse,
+    RecommendationOverrideRequest,
     ResumeAdaptRequest,
 )
 from app.services.candidate import CandidateService
@@ -243,3 +245,56 @@ async def get_match_result(
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match result not found")
     return result
+
+
+@router.put("/jobs/{job_id}/recommendation", response_model=MatchResultResponse)
+async def override_recommendation(
+    job_id: UUID,
+    body: RecommendationOverrideRequest,
+    candidate_profile_id: UUID | None = None,
+    service: Annotated[MatchingService, Depends(get_matching_service)] = None,
+):
+    """
+    Manually override the match category for a job.
+
+    Useful for stretch jobs the user wants to promote to DREAM_JOB (or demote),
+    independent of the computed score.
+    """
+    try:
+        return await service.set_recommendation_override(
+            job_id, candidate_profile_id, body.recommendation
+        )
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
+@router.delete("/jobs/{job_id}/recommendation", response_model=MatchResultResponse)
+async def clear_recommendation_override(
+    job_id: UUID,
+    candidate_profile_id: UUID | None = None,
+    service: Annotated[MatchingService, Depends(get_matching_service)] = None,
+):
+    """
+    Remove the manual match category override (fall back to the computed one).
+    """
+    try:
+        return await service.clear_recommendation_override(job_id, candidate_profile_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
+@router.get("/jobs/{job_id}/gaps", response_model=GapAnalysisResponse)
+async def get_gap_analysis(
+    job_id: UUID,
+    candidate_profile_id: UUID | None = None,
+    service: Annotated[MatchingService, Depends(get_matching_service)] = None,
+):
+    """
+    Get a skill/experience gap analysis for a job.
+
+    Requires the job to be analyzed first (match result must exist).
+    """
+    try:
+        return await service.get_gap_analysis(job_id, candidate_profile_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None

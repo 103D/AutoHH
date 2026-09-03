@@ -11,7 +11,7 @@ class JobSource(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "job_sources"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
-    type: Mapped[str] = mapped_column(String(50), nullable=False)  # api, scraper
+    type: Mapped[str] = mapped_column(String(50), nullable=False)  # provider key (hh_kz, remote_ok, ...)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     configuration: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)

@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -26,14 +26,18 @@ class Application(Base, UUIDMixin, TimestampMixin):
     )
 
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="DRAFT")
-    # DRAFT, READY, APPLIED, SCREENING, INTERVIEW, TECHNICAL_INTERVIEW,
-    # OFFER, REJECTED, WITHDRAWN, NO_RESPONSE
+    # v2 flow: DISCOVERED -> SAVED -> PREPARED -> MANUALLY_APPLIED
+    # legacy tracking: DRAFT, READY, APPLIED, SCREENING, INTERVIEW,
+    # TECHNICAL_INTERVIEW, OFFER, REJECTED, WITHDRAWN, NO_RESPONSE, SKIPPED
 
     cover_letter: Mapped[str | None] = mapped_column(Text, nullable=True)
     adapted_resume: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Generated application package (adapted resume + cover letter + diff)
+    package_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class ApplicationStatusHistory(Base, UUIDMixin, TimestampMixin):
