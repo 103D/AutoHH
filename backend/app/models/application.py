@@ -3,7 +3,15 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -38,6 +46,21 @@ class Application(Base, UUIDMixin, TimestampMixin):
 
     # Generated application package (adapted resume + cover letter + diff)
     package_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # === Feedback loop (task spec #17): quality outcome events ===
+    # Resume profile used for this application (Phase 3 selection)
+    resume_profile_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("resume_profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    # First response from the employer
+    response_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Outcome details
+    interview_stage: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    offer_salary_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    offer_salary_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ApplicationStatusHistory(Base, UUIDMixin, TimestampMixin):

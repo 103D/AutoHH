@@ -23,5 +23,10 @@ RUN poetry install --no-interaction --no-ansi --no-root
 # Copy application
 COPY . .
 
+# Entrypoint script (runs migrations before app start)
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
+
 # Run migrations and start server
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

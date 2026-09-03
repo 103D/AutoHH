@@ -30,6 +30,9 @@ def test_parse_vacancy():
         "schedule": {
             "id": "remote"
         },
+        "experience": {
+            "id": "between3And6"
+        },
         "description": "We are looking for a senior Python developer...",
         "alternate_url": "https://hh.kz/vacancy/123456",
         "published_at": "2026-08-12T10:00:00+06:00"
@@ -46,6 +49,7 @@ def test_parse_vacancy():
     assert raw_job.currency == "KZT"
     assert raw_job.employment_type == "full"
     assert raw_job.work_format == "remote"
+    assert raw_job.experience_required == 3
     assert raw_job.url == "https://hh.kz/vacancy/123456"
     assert raw_job.description == "We are looking for a senior Python developer..."
     assert isinstance(raw_job.published_at, datetime)
@@ -76,6 +80,7 @@ def test_parse_vacancy_minimal():
     assert raw_job.company == "StartUp"
     assert raw_job.salary_min is None
     assert raw_job.salary_max is None
+    assert raw_job.experience_required is None
     assert raw_job.location is None
     assert "Basic programming skills" in raw_job.description
     assert "Write code" in raw_job.description

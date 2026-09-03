@@ -19,7 +19,9 @@ from app.schemas.matching import (
     MatchResultResponse,
     RecommendationOverrideRequest,
     ResumeAdaptRequest,
+    SoftMatchResponse,
 )
+from app.schemas.resume import ResumeRecommendationResponse
 from app.services.candidate import CandidateService
 from app.services.matching import MatchingService
 from app.services.validation import AntiHallucinationValidator
@@ -59,6 +61,24 @@ async def analyze_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
 
 
+@router.post("/jobs/{job_id}/recommend-resume", response_model=ResumeRecommendationResponse)
+async def recommend_resume(
+    job_id: UUID,
+    candidate_profile_id: UUID | None = None,
+    service: Annotated[MatchingService, Depends(get_matching_service)] = None,
+):
+    """
+    Recommend the best resume profile for a vacancy (task spec #16).
+
+    Deterministic: vacancy specialization -> matching resume profile.
+    Every recommendation comes with an explanation.
+    """
+    try:
+        return await service.recommend_resume(job_id, candidate_profile_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
 @router.post("/analyze-pending", response_model=list[MatchResultResponse])
 async def analyze_pending_jobs(
     limit: int = 10,
@@ -77,6 +97,46 @@ async def analyze_pending_jobs(
     """
     results = await service.analyze_pending_jobs(limit, candidate_profile_id)
     return results
+
+
+@router.post("/analyze", response_model=MatchResultResponse)
+async def analyze_job_endpoint(
+    job_id: UUID,
+    candidate_profile_id: UUID | None = None,
+    service: Annotated[MatchingService, Depends(get_matching_service)] = None,
+):
+    """
+    Analyze a specific job against the (default or specified) candidate profile.
+
+    Persists the MatchResult so it is available for gap analysis, resume
+    recommendation, and application creation.
+    """
+    try:
+        result = await service.analyze_job(job_id, candidate_profile_id)
+        return result
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
+@router.post("/match", response_model=SoftMatchResponse)
+async def soft_match_job(
+    job_id: UUID,
+    candidate_profile_id: UUID | None = None,
+    service: Annotated[MatchingService, Depends(get_matching_service)] = None,
+):
+    """
+    Lightweight soft-match: compute score + breakdown **without** persistence.
+
+    Hard filters are still applied (NOT_ELIGIBLE on critical mismatch). LLM is
+    gated behind the deterministic threshold. Useful for quick UI tooltips and
+    batch previews.
+    """
+    profile = await service.candidate_service.resolve_profile(candidate_profile_id)
+    job = await service.job_repository.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Job {job_id} not found")
+
+    return await service.soft_match(job, profile)
 
 
 @router.post("/resume/adapt", response_model=dict)

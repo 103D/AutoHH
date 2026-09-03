@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.models.matching import MatchCategory
+from app.services.skill_taxonomy import skill_variants
 
 
 @dataclass
@@ -39,17 +40,33 @@ class ScoringEngine:
     # Words that are too generic to be considered a strong technical match on their own
     STOPWORDS = {"data", "business", "analyst", "experience", "knowledge", "skills", "professional"}
 
-    def __init__(self):
-        # Weights normalized to sum to 1.0 for deterministic portion
-        self.weights = {
-            "technical": 0.30,
-            "experience": 0.20,
-            "location": 0.10,
-            "salary": 0.10,
-            "work_format": 0.10,
-            "education": 0.10,
-            "language": 0.10,
+    def __init__(self, weights: dict[str, float] | None = None):
+        """Build the engine with configurable weights (task spec #9).
+
+        Defaults come from settings (SCORE_WEIGHT_* env vars); an explicit
+        ``weights`` override (e.g. a per-candidate MatchingProfile) takes
+        precedence. The final weights are always normalized to sum to 1.0.
+        """
+        resolved = {
+            "technical": settings.score_weight_technical,
+            "experience": settings.score_weight_experience,
+            "location": settings.score_weight_location,
+            "salary": settings.score_weight_salary,
+            "work_format": settings.score_weight_work_format,
+            "education": settings.score_weight_education,
+            "language": settings.score_weight_language,
         }
+        if weights:
+            unknown = set(weights) - set(resolved)
+            if unknown:
+                raise ValueError(f"Unknown scoring weights: {sorted(unknown)}")
+            resolved.update(
+                {k: float(v) for k, v in weights.items() if v is not None}
+            )
+        total = sum(resolved.values())
+        if total <= 0:
+            raise ValueError("Scoring weights must sum to a positive value")
+        self.weights = {k: v / total for k, v in resolved.items()}
 
     def _tokenize_text(self, text: str) -> set[str]:
         """Tokenize text into words for skill matching."""
@@ -87,6 +104,16 @@ class ScoringEngine:
             if skill in self.STOPWORDS and len(skill) < 4:
                 continue
 
+            # Taxonomy-aware matching (task spec #14): "postgres" in the job
+            # text matches candidate "PostgreSQL". Variants are matched
+            # against tokens, so the bare "bi"/"ml" aliases can never hit
+            # inside unrelated words.
+            variants = skill_variants(skill)
+            if variants & job_tokens:
+                matches += 1
+                continue
+
+            # Fallback: tokenized original form (multi-word unknown skills)
             skill_tokens = self._tokenize_text(skill)
             if skill_tokens & job_tokens:
                 matches += 1

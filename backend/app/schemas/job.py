@@ -33,6 +33,7 @@ class JobSourceResponse(JobSourceBase):
     last_error: str | None = None
     fetch_count: int = 0
     error_count: int = 0
+    consecutive_errors: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -51,6 +52,10 @@ class JobBase(BaseModel):
 
     employment_type: str | None = None
     work_format: str | None = None
+    experience_required: int | None = Field(None, ge=0)
+
+    # Multi-label specialization (task spec #11); set by the normalizer
+    specializations: list[str] | None = None
 
     url: str
     published_at: datetime | None = None
@@ -67,6 +72,9 @@ class JobBase(BaseModel):
 class JobCreate(JobBase):
     source_id: UUID
     external_id: str
+    # Denormalized job_sources.type persisted on the Job row (task spec #7);
+    # set by the ingestion pipeline, optional for manual creation paths.
+    source_type: str | None = None
     raw_data: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -80,6 +88,8 @@ class JobUpdate(BaseModel):
     currency: str | None = None
     employment_type: str | None = None
     work_format: str | None = None
+    experience_required: int | None = Field(None, ge=0)
+    specializations: list[str] | None = None
     published_at: datetime | None = None
 
     @field_validator("salary_max")
@@ -94,7 +104,10 @@ class JobUpdate(BaseModel):
 class JobResponse(JobBase):
     id: UUID
     source_id: UUID
-    source: str | None = None  # Populated via join with job_sources (not a DB column)
+    # Persisted denormalized source type (jobs.source_type); ``source`` is a
+    # backward-compatible alias served by the model property.
+    source_type: str | None = None
+    source: str | None = None
     external_id: str
 
     first_seen_at: datetime
@@ -107,6 +120,51 @@ class JobResponse(JobBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ManualJobCreate(BaseModel):
+    """Manual job import payload (PROMPT.MD #4 — mandatory fallback).
+
+    Only title/company/description are required; everything else is optional.
+    The payload goes through the same normalization and dedup pipeline as
+    every real provider; a stable external_id is derived from the content
+    hash when not supplied, so repeated imports are idempotent.
+    """
+
+    title: str = Field(..., min_length=1, max_length=500)
+    company: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+
+    url: str | None = None
+    location: str | None = None
+    salary_min: int | None = Field(None, ge=0)
+    salary_max: int | None = Field(None, ge=0)
+    currency: str | None = Field(None, pattern="^[A-Z]{3}$")
+
+    employment_type: str | None = None
+    work_format: str | None = None
+    experience_required: int | None = Field(None, ge=0)
+
+    external_id: str | None = Field(None, max_length=255)
+    published_at: datetime | None = None
+
+    @field_validator("salary_max")
+    @classmethod
+    def validate_salary_range(cls, v: int | None, info) -> int | None:
+        salary_min = info.data.get("salary_min")
+        if v is not None and salary_min is not None and v < salary_min:
+            raise ValueError("salary_max must be greater than or equal to salary_min")
+        return v
+
+
+class ManualJobImportResponse(BaseModel):
+    """Result of a manual import: the created job, or the existing duplicate."""
+
+    job: JobResponse
+    status: str = Field(..., description="'created' or 'duplicate'")
+    duplicate_of: UUID | None = Field(
+        None, description="ID of the existing job when status == 'duplicate'"
+    )
 
 
 class JobFilter(BaseModel):
@@ -139,6 +197,7 @@ class RawJob(BaseModel):
     currency: str | None = None
     employment_type: str | None = None
     work_format: str | None = None
+    experience_required: int | None = None
     published_at: datetime | None = None
 
     raw_data: dict[str, Any] = Field(default_factory=dict)

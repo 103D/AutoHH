@@ -1,8 +1,9 @@
 """Repository for application operations."""
 
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import desc, select
+from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.application import Application, ApplicationStatusHistory
@@ -50,6 +51,39 @@ class ApplicationRepository(BaseRepository[Application]):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def list_feedback_dataset(
+        self, candidate_profile_id: UUID | None = None, limit: int = 1000
+    ) -> list[tuple[Application, Any, Any, Any]]:
+        """Applications joined with their MatchResult, Job and ResumeProfile.
+
+        Returns rows of (application, match | None, job | None,
+        resume_profile | None) — the raw feedback dataset for outcome
+        analytics (task spec #17). Outer joins keep applications without a
+        match/job/profile in the dataset.
+        """
+        from app.models.candidate import ResumeProfile
+        from app.models.job import Job
+        from app.models.matching import MatchResult
+
+        stmt = (
+            select(Application, MatchResult, Job, ResumeProfile)
+            .outerjoin(
+                MatchResult,
+                and_(
+                    MatchResult.job_id == Application.job_id,
+                    MatchResult.candidate_profile_id == Application.candidate_profile_id,
+                ),
+            )
+            .outerjoin(Job, Job.id == Application.job_id)
+            .outerjoin(ResumeProfile, ResumeProfile.id == Application.resume_profile_id)
+            .order_by(desc(Application.updated_at))
+            .limit(limit)
+        )
+        if candidate_profile_id is not None:
+            stmt = stmt.where(Application.candidate_profile_id == candidate_profile_id)
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1], row[2], row[3]) for row in result.all()]
 
 
 class ApplicationStatusHistoryRepository(BaseRepository[ApplicationStatusHistory]):

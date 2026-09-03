@@ -61,11 +61,12 @@ class JobRepository(BaseRepository[Job]):
     ) -> list[Job]:
         """Get jobs with filters.
 
-        The source type is joined from ``job_sources`` and attached as a transient
-        ``Job.source`` attribute (not a DB column), so the API can expose it to clients).
-
+        Source type is read from the denormalized ``jobs.source_type`` column
+        (persisted at ingest; backfilled by migration a1b2c3d4e5f6) — no JOIN
+        needed. Rows with NULL source_type (e.g. manual imports created before
+        backfill) still match via the job_sources subquery.
         """
-        query = select(Job, JobSource.type).join(JobSource, Job.source_id == JobSource.id)
+        query = select(Job)
 
         if filters.company:
             query = query.where(self.model.company.ilike(f"%{filters.company}%"))
@@ -98,17 +99,16 @@ class JobRepository(BaseRepository[Job]):
             query = query.where(self.model.published_at >= filters.published_after)
 
         if filters.source:
-            query = query.where(JobSource.type == filters.source)
+            query = query.where(
+                or_(
+                    Job.source_type == filters.source,
+                    Job.source_id.in_(
+                        select(JobSource.id).where(JobSource.type == filters.source)
+                    ),
+                )
+            )
 
         query = query.order_by(self.model.published_at.desc()).offset(skip).limit(limit)
 
         result = await self.session.execute(query)
-        rows = result.all()
-
-        jobs: list[Job] = []
-        for job, source_type in rows:
-            # Attach the source type so JobResponse can expose it (not a DB column)..
-            job.source = source_type
-            jobs.append(job)
-
-        return jobs
+        return list(result.scalars().all())

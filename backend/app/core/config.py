@@ -38,15 +38,51 @@ class Settings(BaseSettings):
     job_fetch_interval_minutes: int = 30
     job_cleanup_days: int = 90
 
+    # Ingestion resilience: disable a job source after N consecutive failures
+    max_consecutive_source_errors: int = 5
+
     # HeadHunter API User-Agent (required by api.hh.ru; otherwise 403).
     # Format: "AppName/Version (contact@example.com)"
     hh_user_agent: str = "JobHunter/0.1.0 (https://github.com/103D/AutoHH)"
 
-    # Scoring Weights
-    score_weight_semantic: float = 0.4
-    score_weight_technical: float = 0.3
-    score_weight_experience: float = 0.2
-    score_weight_other: float = 0.1
+    # Scoring Weights — deterministic components (normalized to 1.0 in ScoringEngine)
+    score_weight_semantic: float = 0.4  # AI vs deterministic merge weight
+    score_weight_technical: float = 0.30
+    score_weight_experience: float = 0.20
+    score_weight_location: float = 0.10
+    score_weight_salary: float = 0.10
+    score_weight_work_format: float = 0.10
+    score_weight_education: float = 0.10
+    score_weight_language: float = 0.10
+
+    # Hard requirements (task spec #8): any critical failure => NOT_ELIGIBLE
+    hard_filters_enabled: bool = True
+    hard_experience_max_factor: float = 1.5
+    hard_salary_tolerance: float = 0.20
+
+    # LLM cost gate (task spec #29): skip AI analysis when the deterministic
+    # score is below this threshold — LLM only for ambiguous/relevant jobs
+    llm_gate_enabled: bool = True
+    llm_gate_min_deterministic_score: int = 40
+
+    # Feedback loop (task spec #17): match-score bucket boundaries for
+    # outcome analytics; "40,55,70,85" -> <40, 40-54, 55-69, 70-84, >=85
+    feedback_score_buckets: str = "40,55,70,85"
+
+    # LLM result cache (task spec #28): same vacancy + candidate skills +
+    # prompt version => reuse the previous AI analysis instead of paying again
+    llm_cache_enabled: bool = True
+    llm_cache_ttl_hours: int = 168  # 7 days
+
+    # Prometheus metrics (task spec #22): /metrics endpoint + pipeline counters
+    metrics_enabled: bool = True
+
+    # Prompt version stored with analyses and used in cache keys (specs #10/#28)
+    prompt_version: str = "v1"
+
+    # Threshold advisor (specs #18/#32): applications per score bucket before
+    # suggestions stop being marked as provisional
+    threshold_advisor_min_bucket: int = 5
 
     # Match category thresholds (matching v2)
     threshold_dream_job: int = 85

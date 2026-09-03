@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import metrics
 from app.core.database import get_engine
 from app.core.logging import get_logger
 from app.repositories.candidate import CandidateRepository
@@ -51,6 +52,7 @@ async def _analyze_job_async(job_id: UUID) -> dict:
             result = await matching_service.analyze_job(job_id)
 
             await session.commit()
+            metrics.inc_match_recommendation(result.recommendation)
 
             return {
                 "status": "success",
@@ -110,6 +112,8 @@ async def _analyze_new_jobs_async(limit: int) -> dict:
                 score_distribution[result.recommendation] = (
                     score_distribution.get(result.recommendation, 0) + 1
                 )
+            for recommendation, count in score_distribution.items():
+                metrics.inc_match_recommendation(recommendation, amount=count)
 
             return {
                 "status": "success",

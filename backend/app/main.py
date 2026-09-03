@@ -1,11 +1,16 @@
 from contextlib import asynccontextmanager
+from time import perf_counter
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core import setup_logging
 from app.core.config import settings
+from app.core.logging import get_logger, set_request_id
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -32,6 +37,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """Attach a correlation id to the request and log a structured summary."""
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    set_request_id(request_id)
+    start = perf_counter()
+    try:
+        response = await call_next(request)
+        duration_ms = round((perf_counter() - start) * 1000, 1)
+        response.headers["X-Request-ID"] = request_id
+        logger.info(
+            "http_request",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+                "operation": "http_request",
+            },
+        )
+        return response
+    finally:
+        set_request_id(None)
 
 # Include API router
 app.include_router(api_router, prefix=settings.api_v1_prefix)
@@ -73,3 +103,16 @@ async def health_check():
         "database": "ok" if db_healthy else "error",
         "redis": "ok" if redis_healthy else "error",
     }
+
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Prometheus scrape endpoint (task spec #22)."""
+    from fastapi import Response
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    from app.core.metrics import metrics_enabled
+
+    if not metrics_enabled():
+        return Response(status_code=404)
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

@@ -16,6 +16,9 @@ class MatchCategory:
     - MARKET_RESEARCH: not applying now, but a useful market signal
     - LEARNING_OPPORTUNITY: shows in-demand skills worth learning
     - IGNORE: no value for the candidate
+    - NOT_ELIGIBLE: a hard requirement is critically unmet (experience,
+      location, work format, employment type, salary floor). Assigned by
+      the HardFilterEngine, not by the score.
     """
 
     DREAM_JOB = "DREAM_JOB"
@@ -24,6 +27,7 @@ class MatchCategory:
     MARKET_RESEARCH = "MARKET_RESEARCH"
     LEARNING_OPPORTUNITY = "LEARNING_OPPORTUNITY"
     IGNORE = "IGNORE"
+    NOT_ELIGIBLE = "NOT_ELIGIBLE"
 
     ALL: list[str] = [
         DREAM_JOB,
@@ -32,6 +36,7 @@ class MatchCategory:
         MARKET_RESEARCH,
         LEARNING_OPPORTUNITY,
         IGNORE,
+        NOT_ELIGIBLE,
     ]
 
 
@@ -68,8 +73,13 @@ class MatchResult(Base, UUIDMixin, TimestampMixin):
     concerns: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
     reasoning_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Score breakdown (deterministic components)
+    # Score breakdown (deterministic components + stretch + gate info)
     score_breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # Hard requirement failures (task spec #8); empty when eligible
+    hard_failures: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default="{}"
+    )
 
     # AI metadata
     ai_provider: Mapped[str | None] = mapped_column(nullable=True)

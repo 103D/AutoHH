@@ -4,9 +4,12 @@ from uuid import UUID
 from app.core.exceptions import DuplicateError, NotFoundError
 from app.models.job import Job, JobSource
 from app.repositories.job import JobRepository, JobSourceRepository
-from app.schemas.job import JobCreate, JobFilter, JobSourceCreate, RawJob
+from app.schemas.job import JobCreate, JobFilter, JobSourceCreate, ManualJobCreate, RawJob
 from app.services.deduplication import DeduplicationService
 from app.utils.hash import compute_content_hash, normalize_url
+
+# Well-known name/type of the manual import source (task spec #4)
+MANUAL_SOURCE_NAME = "manual"
 
 
 class JobSourceService:
@@ -35,6 +38,26 @@ class JobSourceService:
 
         source_data = source_in.model_dump()
         return await self.repository.create(source_data)
+
+    async def get_or_create_manual_source(self) -> JobSource:
+        """Get or create the dedicated manual import source (task spec #4).
+
+        A single well-known source ("manual", type "manual") so manually added
+        vacancies live in the same jobs table and pass the exact same pipeline
+        as provider-fetched ones. Fetching it is harmless: ManualProvider
+        serves vacancies from its configuration only.
+        """
+        source = await self.repository.get_by_name(MANUAL_SOURCE_NAME)
+        if source:
+            return source
+        return await self.repository.create(
+            {
+                "name": MANUAL_SOURCE_NAME,
+                "type": "manual",
+                "enabled": True,
+                "configuration": {},
+            }
+        )
 
 
 class JobService:
@@ -74,7 +97,11 @@ class JobService:
         return await self.repository.create(job_data)
 
     async def ingest_raw_job(
-        self, source_id: UUID, raw_job: RawJob, dedup_service: DeduplicationService
+        self,
+        source_id: UUID,
+        raw_job: RawJob,
+        dedup_service: DeduplicationService,
+        source_type: str | None = None,
     ) -> tuple[Job | None, str]:
         """
         Ingest raw job with deduplication.
@@ -82,7 +109,9 @@ class JobService:
         Status: 'created', 'duplicate'
         """
 
-        job_create, status = await dedup_service.process_raw_job(source_id, raw_job)
+        job_create, status = await dedup_service.process_raw_job(
+            source_id, raw_job, source_type=source_type
+        )
 
         if status == "duplicate":
             # Update last_seen_at for existing job
@@ -96,3 +125,44 @@ class JobService:
             return job, "created"
 
         return None, "error"
+
+    async def ingest_manual_job(
+        self,
+        source_id: UUID,
+        payload: ManualJobCreate,
+        dedup_service: DeduplicationService,
+        source_type: str = "manual",
+    ) -> tuple[Job | None, str, str]:
+        """Import a manually provided vacancy through the standard pipeline.
+
+        normalize -> deduplicate -> persist — the exact same path as every
+        provider (task spec #4). The external_id is deterministic (derived
+        from the content hash) unless explicitly supplied, so re-importing
+        the same vacancy is idempotent.
+
+        Returns (job, status, external_id); status: 'created' | 'duplicate'.
+        """
+        content_hash = compute_content_hash(
+            payload.title, payload.company, payload.description, payload.location
+        )
+        external_id = payload.external_id or f"manual-{content_hash[:16]}"
+        raw_job = RawJob(
+            external_id=external_id,
+            title=payload.title,
+            company=payload.company,
+            description=payload.description,
+            url=payload.url or f"manual://{external_id}",
+            location=payload.location,
+            salary_min=payload.salary_min,
+            salary_max=payload.salary_max,
+            currency=payload.currency,
+            employment_type=payload.employment_type,
+            work_format=payload.work_format,
+            experience_required=payload.experience_required,
+            published_at=payload.published_at,
+            raw_data={"import": "manual"},
+        )
+        job, status = await self.ingest_raw_job(
+            source_id, raw_job, dedup_service, source_type=source_type
+        )
+        return job, status, external_id

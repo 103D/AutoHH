@@ -32,6 +32,7 @@ SAMPLE_JOBPOSTING = {
     "datePosted": "2026-08-20T10:00:00+06:00",
     "employmentType": "FULL_TIME",
     "jobLocationType": "TELECOMMUTE",
+    "experienceRequirements": "от 3 лет",
     "identifier": {"@type": "PropertyValue", "name": "habr", "value": "v-777"},
     "baseSalary": {
         "@type": "MonetaryAmount",
@@ -81,6 +82,7 @@ class TestJsonLdHelpers:
         assert kwargs["currency"] == "KZT"
         assert kwargs["employment_type"] == "full_time"
         assert kwargs["work_format"] == "remote"
+        assert kwargs["experience_required"] == 3
         assert "strong" in kwargs["description"]
         assert "&" in kwargs["description"]  # &amp; decoded
         assert kwargs["published_at"] is not None

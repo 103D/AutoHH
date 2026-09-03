@@ -8,6 +8,7 @@ import httpx
 from app.core.exceptions import JobSourceError
 from app.core.logging import get_logger
 from app.schemas.job import RawJob
+from app.utils.experience import extract_required_experience_years
 
 logger = get_logger(__name__)
 
@@ -147,6 +148,7 @@ class SuperJobProvider:
             currency=currency,
             employment_type=employment_type,
             work_format=work_format,
+            experience_required=extract_required_experience_years(description),
             published_at=published_at,
             raw_data=data,
         )

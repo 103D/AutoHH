@@ -12,6 +12,7 @@ import httpx
 
 from app.core.logging import get_logger
 from app.schemas.job import RawJob
+from app.utils.experience import extract_required_experience_years
 
 logger = get_logger(__name__)
 
@@ -97,7 +98,6 @@ class RemoteOkProvider:
 
         description = re.sub(r"<[^>]+>", " ", data.get("description") or "")
         description = re.sub(r"\s+", " ", description).strip()
-
         location = None
         if data.get("location"):
             location = str(data["location"]).strip() or None
@@ -114,6 +114,7 @@ class RemoteOkProvider:
             currency=None,  # RemoteOK does not expose currency
             employment_type=None,
             work_format="remote",
+            experience_required=extract_required_experience_years(description),
             published_at=published_at,
             raw_data=data,
         )

@@ -70,3 +70,66 @@ class DreamJobsResponse(BaseModel):
     candidate_profile_id: UUID
     total: int = 0
     jobs: list[DreamJobItem] = Field(default_factory=list)
+
+
+class FeedbackBucketStat(BaseModel):
+    """Outcome stats for one match-score bucket."""
+
+    bucket: str
+    applications: int = 0
+    responses: int = 0
+    interviews: int = 0
+    offers: int = 0
+    response_rate: float = 0.0
+    interview_rate: float = 0.0
+    offer_rate: float = 0.0
+
+
+class FeedbackProfileStat(BaseModel):
+    """Outcome stats for one resume profile."""
+
+    resume_profile_id: str
+    profile_name: str
+    specialization: str
+    applications: int = 0
+    responses: int = 0
+    interviews: int = 0
+    offers: int = 0
+    response_rate: float = 0.0
+    interview_rate: float = 0.0
+    offer_rate: float = 0.0
+
+
+class FeedbackSpecializationStat(BaseModel):
+    """Outcome stats for one job specialization."""
+
+    specialization: str
+    applications: int = 0
+    responses: int = 0
+    interviews: int = 0
+    offers: int = 0
+    response_rate: float = 0.0
+    interview_rate: float = 0.0
+    offer_rate: float = 0.0
+
+
+class CountItem(BaseModel):
+    """Generic named counter."""
+
+    name: str
+    count: int
+
+
+class FeedbackResponse(BaseModel):
+    """Aggregated feedback-loop report (task spec #17)."""
+
+    total_applications: int = 0
+    responded: int = 0
+    interviews: int = 0
+    response_rate: float = 0.0
+    interview_rate: float = 0.0
+    score_buckets: list[FeedbackBucketStat] = Field(default_factory=list)
+    resume_profiles: list[FeedbackProfileStat] = Field(default_factory=list)
+    specializations: list[FeedbackSpecializationStat] = Field(default_factory=list)
+    rejection_reasons: list[CountItem] = Field(default_factory=list)
+    missing_skills_on_rejection: list[CountItem] = Field(default_factory=list)

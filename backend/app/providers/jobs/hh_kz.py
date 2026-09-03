@@ -6,6 +6,10 @@ import httpx
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.job import RawJob
+from app.utils.experience import (
+    experience_years_from_hh_id,
+    extract_required_experience_years,
+)
 
 logger = get_logger(__name__)
 
@@ -163,6 +167,13 @@ class HeadHunterKZProvider:
             except ValueError:
                 pass
 
+        # Required experience: prefer the structured HH ``experience.id`` field,
+        # fall back to deterministic text extraction from the description.
+        experience = data.get("experience") or {}
+        experience_required = experience_years_from_hh_id(experience.get("id"))
+        if experience_required is None:
+            experience_required = extract_required_experience_years(description)
+
         return RawJob(
             external_id=str(data["id"]),
             title=data["name"],
@@ -175,6 +186,7 @@ class HeadHunterKZProvider:
             currency=currency,
             employment_type=employment_type,
             work_format=work_format,
+            experience_required=experience_required,
             published_at=published_at,
             raw_data=data,
         )

@@ -6,6 +6,9 @@ import pytest
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://jobhunter:password@localhost:5432/jobhunter_test"
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["AI_API_KEY"] = "test_key"
+# Keep unit tests hermetic: no Redis dependency in the LLM cache path
+# (individual cache tests opt back in via monkeypatch on settings).
+os.environ["LLM_CACHE_ENABLED"] = "false"
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +74,7 @@ async def cleanup_db(db_session):
 
     try:
         await db_session.execute(text("TRUNCATE TABLE candidate_profiles CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE resume_profiles CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE job_sources CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE jobs CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE match_results CASCADE;"))

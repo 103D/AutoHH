@@ -23,6 +23,7 @@ from app.repositories.job import JobRepository
 from app.repositories.matching import MatchResultRepository
 from app.schemas.application import ApplicationUpdate
 from app.services.application import ApplicationService
+from app.services.resume_selection import ResumeSelector
 from app.services.validation import AntiHallucinationValidator
 
 logger = get_logger(__name__)
@@ -47,12 +48,18 @@ class ApplicationPackageService:
         match_repo: MatchResultRepository,
         ai_provider: Any = None,
         validator: AntiHallucinationValidator | None = None,
+        resume_profile_repo: Any = None,
+        resume_selector: Any = None,
     ):
         self.application_service = application_service
         self.job_repo = job_repo
         self.match_repo = match_repo
         self.ai_provider = ai_provider or create_ai_provider()
         self.validator = validator or AntiHallucinationValidator()
+        # Optional Phase 4 integration (task spec #17): record which resume
+        # profile the application uses via deterministic ResumeSelector.
+        self.resume_profile_repo = resume_profile_repo
+        self.resume_selector = resume_selector or ResumeSelector()
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
@@ -172,6 +179,33 @@ class ApplicationPackageService:
         match = await self.match_repo.get_by_job_and_candidate(
             application.job_id, application.candidate_profile_id
         )
+
+        # Feedback loop (task spec #17): record which resume profile this
+        # application uses. Deterministic recommendation (ResumeSelector),
+        # best-effort — never blocks package generation.
+        if self.resume_profile_repo is not None and getattr(
+            application, "resume_profile_id", None
+        ) is None:
+            try:
+                profiles = await self.resume_profile_repo.list_by_candidate(
+                    application.candidate_profile_id
+                )
+                recommendation = self.resume_selector.recommend(job, profiles)
+                if recommendation.recommended_profile_id is not None:
+                    application = await self.application_service.application_repo.update(
+                        application,
+                        {"resume_profile_id": recommendation.recommended_profile_id},
+                    )
+                    logger.info(
+                        f"Application {application_id}: selected resume profile "
+                        f"{recommendation.recommended_profile_name} "
+                        f"({recommendation.recommended_specialization})"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Resume selection failed for application {application_id}: {e}"
+                )
+
         key_requirements = self._build_key_requirements(profile, job, match)
 
         # 1) Adapt resume (AI) - with graceful fallback when AI is unavailable

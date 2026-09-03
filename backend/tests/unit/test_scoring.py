@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.core.config import settings
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.services.scoring import ScoreBreakdown, ScoringEngine
@@ -349,3 +350,81 @@ def test_candidate_with_no_skills():
 
     score = engine.calculate_technical_score(candidate, job)
     assert score == 50.0  # Neutral when no skills specified
+
+
+def test_custom_weights_override_and_normalize():
+    """Explicit weights (e.g. a per-candidate MatchingProfile) override the
+    listed components, keep settings defaults for the rest, and the final
+    weights are normalized to sum to 1.0 (task spec #9)."""
+    engine = ScoringEngine(weights={"technical": 2.0, "language": 1.0})
+    assert abs(sum(engine.weights.values()) - 1.0) < 1e-6
+    # Overridden components keep their relative ratio (2:1)...
+    assert engine.weights["technical"] / engine.weights["language"] == pytest.approx(2.0)
+    # ...while non-overridden components keep their default proportions.
+    default = ScoringEngine()
+    assert engine.weights["location"] / engine.weights["salary"] == pytest.approx(
+        default.weights["location"] / default.weights["salary"]
+    )
+
+
+def test_unknown_weight_raises():
+    with pytest.raises(ValueError, match="Unknown scoring weights"):
+        ScoringEngine(weights={"charisma": 1.0})
+
+
+def test_all_zero_weights_raises():
+    zero = {
+        k: 0.0
+        for k in (
+            "technical",
+            "experience",
+            "location",
+            "salary",
+            "work_format",
+            "education",
+            "language",
+        )
+    }
+    with pytest.raises(ValueError, match="positive"):
+        ScoringEngine(weights=zero)
+
+
+def test_default_weights_come_from_settings():
+    """Defaults must be sourced from settings, not hardcoded (task spec #9)."""
+    engine = ScoringEngine()
+    total = sum(
+        getattr(settings, f"score_weight_{component}")
+        for component in engine.weights
+    )
+    for component, weight in engine.weights.items():
+        expected = getattr(settings, f"score_weight_{component}") / total
+        assert weight == pytest.approx(expected)
+
+
+def test_technical_score_uses_skill_taxonomy():
+    """Alias forms in the vacancy text must match canonical candidate
+    skills ("postgres" matches "PostgreSQL") — task spec #14."""
+    engine = ScoringEngine()
+    candidate = CandidateProfile(
+        id="11111111-1111-1111-1111-111111111111",
+        user_id="22222222-2222-2222-2222-222222222222",
+        skills=["PostgreSQL", "Python"],
+        technologies=["PostgreSQL", "Python"],
+        experience_years=4,
+    )
+    job = Job(
+        id="33333333-3333-3333-3333-333333333333",
+        source_id="44444444-4444-4444-4444-444444444444",
+        external_id="hh_777",
+        title="Data Engineer",
+        company="TestCo",
+        description="Strong postgres and python skills required for ETL pipelines.",
+        url="https://hh.kz/vacancy/777",
+        first_seen_at="2024-01-15T10:00:00Z",
+        last_seen_at="2024-01-15T10:00:00Z",
+        content_hash="xyz789",
+        url_normalized="https://hh.kz/vacancy/777",
+        raw_data={},
+    )
+    score = engine.calculate_technical_score(candidate, job)
+    assert score >= 90.0

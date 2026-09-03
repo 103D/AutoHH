@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import ARRAY, JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -22,19 +22,36 @@ class JobSource(Base, UUIDMixin, TimestampMixin):
 
     fetch_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Consecutive failures without a success in between; drives auto-disable.
+    consecutive_errors: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class Job(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "jobs"
     __table_args__ = (
-        Index("ix_jobs_source_external", "source_id", "external_id"),
+        # Idempotency: one row per (source, external) vacancy.
+        Index("ix_jobs_source_external", "source_id", "external_id", unique=True),
         Index("ix_jobs_published_at", "published_at"),
     )
 
     source_id: Mapped[UUID] = mapped_column(
-        ForeignKey("job_sources.id"), nullable=False, index=True
+        ForeignKey("job_sources.id", ondelete="CASCADE"), nullable=False, index=True
     )
     external_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    # Denormalized source type (job_sources.type) persisted at ingest time;
+    # enables source filtering without a JOIN. Backfilled by migration
+    # a1b2c3d4e5f6. Replaces the former transient ``Job.source`` Python hack.
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+
+    @property
+    def source(self) -> str | None:
+        """Backward-compatible alias for the persisted source type."""
+        return self.source_type
+
+    @source.setter
+    def source(self, value: str | None) -> None:
+        self.source_type = value
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     company: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
@@ -47,6 +64,11 @@ class Job(Base, UUIDMixin, TimestampMixin):
 
     employment_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     work_format: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    experience_required: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Multi-label specialization classification (task spec #11), e.g.
+    # ["DATA_ANALYST", "RETAIL_COMMERCIAL_ANALYST"]; NULL = not classified yet
+    specializations: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
 
     url: Mapped[str] = mapped_column(Text, nullable=False)
     published_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)

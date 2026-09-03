@@ -28,6 +28,13 @@ class CandidateProfileBase(BaseModel):
     business_trips_acceptable: bool = False  # Changed default from True to False
 
     resume_versions: dict[str, Any] = Field(default_factory=dict)
+
+    # Master candidate profile structured facts (task spec #13)
+    experience: list[dict[str, Any]] | None = None
+    projects: list[dict[str, Any]] | None = None
+    certifications: list[dict[str, Any]] | None = None
+    skills_metadata: dict[str, Any] = Field(default_factory=dict)
+
     additional_preferences: dict[str, Any] | None = None
 
 
@@ -61,6 +68,13 @@ class CandidateProfileUpdate(BaseModel):
     business_trips_acceptable: bool | None = None
 
     resume_versions: dict[str, Any] | None = None
+
+    # Master candidate profile structured facts (task spec #13)
+    experience: list[dict[str, Any]] | None = None
+    projects: list[dict[str, Any]] | None = None
+    certifications: list[dict[str, Any]] | None = None
+    skills_metadata: dict[str, Any] | None = None
+
     additional_preferences: dict[str, Any] | None = None
 
 

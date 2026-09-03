@@ -21,6 +21,10 @@ class MatchResultBase(BaseModel):
     user_override_recommendation: str | None = Field(
         default=None, description="Manual category override set by the user"
     )
+    hard_failures: list[str] = Field(
+        default_factory=list,
+        description="Hard requirement failures; non-empty means NOT_ELIGIBLE",
+    )
     matched_skills: list[SkillMatch] = Field(default_factory=list)
     missing_skills: list[str] = Field(default_factory=list)
     strong_matches: list[str] = Field(default_factory=list)
@@ -32,6 +36,16 @@ class MatchResultBase(BaseModel):
     salary_match: bool | None = None
     location_match: bool | None = None
     experience_match: bool | None = None
+
+
+class SoftMatchResponse(BaseModel):
+    """Lightweight soft-match: component scores without persistence (spec #5)."""
+
+    score: int = Field(ge=0, le=100)
+    recommendation: str
+    score_breakdown: dict = Field(default_factory=dict)
+    matched_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
 
 
 class RecommendationOverrideRequest(BaseModel):

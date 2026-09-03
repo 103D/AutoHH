@@ -35,6 +35,21 @@ class ApplicationUpdate(BaseModel):
     notes: str | None = None
     comment: str | None = Field(None, description="Comment for status change")
 
+    # === Feedback loop outcomes (task spec #17) ===
+    resume_profile_id: UUID | None = Field(
+        None, description="Resume profile used for this application"
+    )
+    response_received_at: datetime | None = Field(
+        None, description="When the employer first responded"
+    )
+    interview_stage: str | None = Field(
+        None,
+        description="Interview stage reached: screening, technical, final, offer",
+    )
+    rejection_reason: str | None = Field(None, description="Why the application was rejected")
+    offer_salary_min: int | None = Field(None, ge=0)
+    offer_salary_max: int | None = Field(None, ge=0)
+
 
 class ApplicationResponse(ApplicationBase):
     """Schema for application response."""
@@ -44,6 +59,12 @@ class ApplicationResponse(ApplicationBase):
     candidate_profile_id: UUID
     status: str
     applied_at: datetime | None = None
+    resume_profile_id: UUID | None = None
+    response_received_at: datetime | None = None
+    interview_stage: str | None = None
+    rejection_reason: str | None = None
+    offer_salary_min: int | None = None
+    offer_salary_max: int | None = None
     created_at: datetime
     updated_at: datetime
 

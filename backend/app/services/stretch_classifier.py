@@ -6,7 +6,6 @@ The classifier runs deterministically (regex + keyword analysis, no AI) and
 returns signals (reasons) and disqualifiers (blockers).
 """
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +14,7 @@ from app.core.logging import get_logger
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.services.scoring import ScoringEngine
+from app.utils.experience import extract_required_experience_years
 
 logger = get_logger(__name__)
 
@@ -25,15 +25,6 @@ ORDER_LEVEL = {v: k for k, v in LEVEL_ORDER.items()}
 TOP_TIER_COMPANIES = [
     "google", "meta", "amazon", "apple", "netflix", "microsoft", "openai",
     "yandex", "ozon", "avito", "vk", "tinkoff", "sber", "wildberries",
-]
-
-# Patterns to extract required years of experience from vacancy text
-EXPERIENCE_PATTERNS = [
-    r"(\d+)\s*\+?\s*(?:год(?:а|ы)?|лет)\s*опыта",
-    r"опыт[а-яё]*\s*(?:от|:)?\s*(\d+)\s*(?:год(?:а|ы)?|лет)",
-    r"от\s*(\d+)\s*(?:год(?:а|ы)?|лет)",
-    r"(\d+)\s*\+?\s*(?:years?|yrs?)",
-    r"(\d+)\s*\+?\s*years?\s*(?:of\s*)?experience",
 ]
 
 # Known skill keywords used to detect skills mentioned in vacancy text
@@ -94,11 +85,7 @@ class StretchClassifier:
 
     def extract_required_experience(self, job: Job) -> int | None:
         """Extract required years of experience from the vacancy description."""
-        for pattern in EXPERIENCE_PATTERNS:
-            match = re.search(pattern, job.description, re.IGNORECASE)
-            if match:
-                return int(match.group(1))
-        return None
+        return extract_required_experience_years(job.description)
 
     @staticmethod
     def _level_from_years(years: int | None) -> str:

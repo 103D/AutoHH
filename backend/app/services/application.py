@@ -23,6 +23,11 @@ VALID_STATUSES = {
     "NO_RESPONSE", "SKIPPED",
 }
 
+# Statuses meaning the employer responded (for feedback-loop auto-stamping)
+RESPONDED_STATUSES = {"SCREENING", "INTERVIEW", "TECHNICAL_INTERVIEW", "OFFER", "REJECTED"}
+# Statuses meaning the candidate reached an interview stage
+INTERVIEW_STATUSES = {"INTERVIEW", "TECHNICAL_INTERVIEW", "OFFER"}
+
 
 class ApplicationService:
     """Service for application tracking business logic."""
@@ -128,6 +133,10 @@ class ApplicationService:
             # Set applied_at when status becomes APPLIED
             if new_status == "APPLIED" and not application.applied_at:
                 update_data["applied_at"] = datetime.now(UTC)
+
+            # Feedback loop (task spec #17): stamp the first employer response
+            if new_status in RESPONDED_STATUSES and not application.response_received_at:
+                update_data.setdefault("response_received_at", datetime.now(UTC))
 
         # Update application
         if update_data:

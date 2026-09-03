@@ -1,7 +1,15 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,5 +49,67 @@ class CandidateProfile(Base, UUIDMixin, TimestampMixin):
     # Resume versions
     resume_versions: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
+    # Master candidate profile (task spec #13): single source of truth for
+    # the candidate's facts. Referenced by ResumeProfiles — never duplicated.
+    # experience: [{id, company, title, period_start, period_end, description,
+    #               achievements, skills}]
+    experience: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # projects: [{id, name, role, description, technologies, results}]
+    projects: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # certifications: [{name, issuer, year, url}]
+    certifications: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # Per-skill metadata keyed by canonical skill name (task spec #13):
+    # {skill: {category, confidence, experience_level, production_experience, years}}
+    skills_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
     # Additional
     additional_preferences: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+class ResumeProfile(Base, UUIDMixin, TimestampMixin):
+    """Specialized resume presentation built on top of the master profile.
+
+    Holds only presentation-level data (headline, summary, keywords) and
+    references into the master CandidateProfile (selected_skills,
+    selected_experience_ids, selected_project_ids) — the actual experience is
+    never duplicated across profiles (task spec #12):
+
+        Master Candidate Profile
+                  |
+        Resume Profiles (DATA_ANALYST / BI_ANALYST / PRODUCT_ANALYST /
+                         RETAIL_COMMERCIAL_ANALYST)
+    """
+
+    __tablename__ = "resume_profiles"
+
+    candidate_profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("candidate_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    specialization: Mapped[str] = mapped_column(String(50), nullable=False)
+    profile_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    headline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # References into the master profile — facts live only there.
+    selected_skills: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, nullable=False)
+    selected_experience_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, nullable=False
+    )
+    selected_project_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, nullable=False
+    )
+    specialization_keywords: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, nullable=False
+    )
+    # Optional rendered resume text for this specialization.
+    generated_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "candidate_profile_id",
+            "specialization",
+            name="uq_resume_profiles_candidate_specialization",
+        ),
+    )

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from app.core.logging import get_logger
+from app.utils.experience import extract_required_experience_years
 
 logger = get_logger(__name__)
 
@@ -169,6 +170,16 @@ def jobposting_to_rawjob(posting: dict[str, Any], base_url: str) -> dict[str, An
         except ValueError:
             pass
 
+    # Required experience (schema.org ``experienceRequirements`` can be a
+    # plain string or a structured object with ``minimumExperience``).
+    experience_required = None
+    exp_req = posting.get("experienceRequirements") or {}
+    if isinstance(exp_req, str):
+        experience_required = extract_required_experience_years(exp_req)
+    elif isinstance(exp_req, dict):
+        minimum_experience = exp_req.get("minimumExperience") or exp_req.get("name") or ""
+        experience_required = extract_required_experience_years(str(minimum_experience))
+
     return {
         "external_id": external_id,
         "title": str(posting.get("title") or posting.get("name") or "Untitled"),
@@ -181,6 +192,7 @@ def jobposting_to_rawjob(posting: dict[str, Any], base_url: str) -> dict[str, An
         "currency": currency,
         "employment_type": employment_type,
         "work_format": work_format,
+        "experience_required": experience_required,
         "published_at": published_at,
         "raw_data": posting,
     }

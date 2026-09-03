@@ -3,6 +3,7 @@ from uuid import UUID
 from app.core.logging import get_logger
 from app.repositories.job import JobRepository
 from app.schemas.job import JobCreate, RawJob
+from app.services.specialization import classify_job
 from app.utils.hash import compute_content_hash, normalize_url
 
 logger = get_logger(__name__)
@@ -42,7 +43,10 @@ class DeduplicationService:
         return False, None
 
     async def process_raw_job(
-        self, source_id: UUID, raw_job: RawJob
+        self,
+        source_id: UUID,
+        raw_job: RawJob,
+        source_type: str | None = None,
     ) -> tuple[JobCreate | None, str]:
         """
         Process raw job and prepare for creation.
@@ -69,6 +73,9 @@ class DeduplicationService:
             currency=raw_job.currency,
             employment_type=raw_job.employment_type,
             work_format=raw_job.work_format,
+            experience_required=raw_job.experience_required,
+            specializations=classify_job(raw_job.title, raw_job.description),
+            source_type=source_type,
             url=raw_job.url,
             published_at=raw_job.published_at,
             raw_data=raw_job.raw_data,

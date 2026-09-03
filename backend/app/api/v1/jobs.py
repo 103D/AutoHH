@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -14,7 +14,10 @@ from app.schemas.job import (
     JobSourceCreate,
     JobSourceResponse,
     JobSourceUpdate,
+    ManualJobCreate,
+    ManualJobImportResponse,
 )
+from app.services.deduplication import DeduplicationService
 from app.services.job import JobService, JobSourceService
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -93,6 +96,56 @@ async def get_job(
         return await service.get_job(job_id)
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
+@router.post(
+    "/manual",
+    response_model=ManualJobImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_manual_job(
+    payload: ManualJobCreate,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+):
+    """Manually import a vacancy (PROMPT.MD #4 — mandatory fallback).
+
+    Follows the exact same pipeline as every provider:
+    normalize -> deduplicate -> persist -> matching queue.
+
+    Re-importing the same vacancy is idempotent: the deterministic
+    external_id / content-hash / URL dedup returns the existing job
+    with status 'duplicate' (HTTP 200).
+    """
+    source_service = JobSourceService(JobSourceRepository(session))
+    job_repo = JobRepository(session)
+    job_service = JobService(job_repo)
+    dedup_service = DeduplicationService(job_repo)
+
+    source = await source_service.get_or_create_manual_source()
+    job, import_status, external_id = await job_service.ingest_manual_job(
+        source.id, payload, dedup_service, source_type=source.type
+    )
+
+    if import_status == "duplicate":
+        existing = await job_repo.get_by_external_id(source.id, external_id)
+        if existing is None:  # pragma: no cover — defensive, dedup guarantees it
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Duplicate detected but the existing job cannot be resolved",
+            )
+        response.status_code = status.HTTP_200_OK
+        return ManualJobImportResponse(
+            job=JobResponse.model_validate(existing),
+            status="duplicate",
+            duplicate_of=existing.id,
+        )
+
+    return ManualJobImportResponse(
+        job=JobResponse.model_validate(job),
+        status="created",
+        duplicate_of=None,
+    )
 
 
 # Job Source endpoints

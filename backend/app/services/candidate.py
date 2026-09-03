@@ -26,6 +26,23 @@ class CandidateService:
             raise NotFoundError(f"Profile for user {user_id} not found")
         return profile
 
+    async def resolve_profile(self, profile_id: UUID | None) -> CandidateProfile:
+        """Resolve a profile by id, or fall back to the default (single-user).
+
+        Centralizes the "profile_id or default" resolution previously
+        duplicated across services.
+        """
+        if profile_id:
+            return await self.get_profile(profile_id)
+        return await self.get_default_profile()
+
+    async def get_default_profile(self) -> CandidateProfile:
+        """Get the first candidate profile (assumes single user for now)."""
+        profiles = await self.repository.get_multi(0, 1)
+        if not profiles:
+            raise NotFoundError("No candidate profile found. Please create a profile first.")
+        return profiles[0]
+
     async def create_profile(self, profile_in: CandidateProfileCreate) -> CandidateProfile:
         """Create new candidate profile."""
         # Check if profile already exists for this user
