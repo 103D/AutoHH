@@ -49,7 +49,9 @@ SOURCES: list[dict] = [
     {
         "name": "Habr_Career",
         "type": "habr_career",
-        "enabled": True,
+        # Disabled: site markup changed; JSON-LD JobPosting blocks no longer present.
+        # Re-enable after updating the scraper parser.
+        "enabled": False,
         "configuration": {
             "query": "data analyst",
             "remote": True,
@@ -60,7 +62,9 @@ SOURCES: list[dict] = [
     {
         "name": "Zarplata",
         "type": "zarplata",
-        "enabled": True,
+        # Disabled: site markup changed; only BreadcrumbList JSON-LD blocks found.
+        # Re-enable after updating the scraper parser.
+        "enabled": False,
         "configuration": {
             "query": "аналитик данных",
             "remote": False,

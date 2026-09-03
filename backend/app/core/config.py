@@ -41,9 +41,11 @@ class Settings(BaseSettings):
     # Ingestion resilience: disable a job source after N consecutive failures
     max_consecutive_source_errors: int = 5
 
-    # HeadHunter API User-Agent (required by api.hh.ru; otherwise 403).
-    # Format: "AppName/Version (contact@example.com)"
-    hh_user_agent: str = "JobHunter/0.1.0 (https://github.com/103D/AutoHH)"
+    # HeadHunter API User-Agent (required by api.hh.ru; otherwise 403/400).
+    # You MUST register an application at https://dev.hh.ru/ to get a valid
+    # App ID. Free/public UAs and common email domains are blacklisted.
+    # Format: "AppName/Version (contact@yourdomain.com)"
+    hh_user_agent: str = "JobHunter/0.1.0 (contact@yourdomain.com)"
 
     # Scoring Weights — deterministic components (normalized to 1.0 in ScoringEngine)
     score_weight_semantic: float = 0.4  # AI vs deterministic merge weight

@@ -87,6 +87,21 @@ class HeadHunterKZProvider:
                         "Rate limited", request=response.request, response=response
                     )
 
+                # Provide a clear actionable warning for the most common failure mode.
+                if response.status_code in (400, 403):
+                    try:
+                        err = response.json()
+                        errs = err.get("errors", [])
+                        if any(e.get("type") == "bad_user_agent" for e in errs):
+                            logger.error(
+                                "HH API rejected the User-Agent as blacklisted or unregistered. "
+                                "Register your application at https://dev.hh.ru/ and set "
+                                "HH_USER_AGENT in your .env to the registered AppName/Version "
+                                "with a real contact email."
+                            )
+                    except Exception:
+                        pass
+
                 response.raise_for_status()
                 data = response.json()
 

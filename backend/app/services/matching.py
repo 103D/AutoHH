@@ -110,6 +110,27 @@ class MatchingService:
         name = getattr(self.ai_provider, "name", None)
         return str(name) if name else self.ai_provider.__class__.__name__
 
+    def _deterministic_skill_match(
+        self, profile: CandidateProfile, job: Job
+    ) -> tuple[list[str], list[str]]:
+        """Return (matched_skills, missing_skills) using deterministic token matching."""
+        job_text = f"{job.title} {job.description or ''}"
+        job_tokens = self.scoring._tokenize_text(job_text)
+        candidate_skills = set()
+        candidate_skills.update(self.scoring._normalize_skills(profile.skills))
+        candidate_skills.update(self.scoring._normalize_skills(profile.technologies))
+
+        matched, missing = [], []
+        for skill in candidate_skills:
+            if skill in self.scoring.STOPWORDS and len(skill) < 4:
+                continue
+            variants = skill_variants(skill)
+            if variants & job_tokens or self.scoring._tokenize_text(skill) & job_tokens:
+                matched.append(skill)
+            else:
+                missing.append(skill)
+        return matched, missing
+
     async def soft_match(self, job, profile) -> SoftMatchResponse:
         """
         Lightweight soft-match: compute score + breakdown WITHOUT persistence.
@@ -137,22 +158,7 @@ class MatchingService:
             else self.scoring.get_recommendation(score)
         )
 
-        # Deterministic matched/missing skills (mirrors ScoringEngine technical scoring)
-        job_text = f"{job.title} {job.description or ''}"
-        job_tokens = self.scoring._tokenize_text(job_text)
-        candidate_skills = set()
-        candidate_skills.update(self.scoring._normalize_skills(profile.skills))
-        candidate_skills.update(self.scoring._normalize_skills(profile.technologies))
-
-        matched, missing = [], []
-        for skill in candidate_skills:
-            if skill in self.scoring.STOPWORDS and len(skill) < 4:
-                continue
-            variants = skill_variants(skill)
-            if variants & job_tokens or self.scoring._tokenize_text(skill) & job_tokens:
-                matched.append(skill)
-            else:
-                missing.append(skill)
+        matched, missing = self._deterministic_skill_match(profile, job)
 
         return SoftMatchResponse(
             score=score,
@@ -328,6 +334,9 @@ class MatchingService:
 
         now = datetime.now(UTC).isoformat()
 
+        # When AI didn't run, fall back to deterministic skill matching.
+        det_matched, det_missing = self._deterministic_skill_match(profile, job)
+
         match_data = {
             "job_id": job_id,
             "candidate_profile_id": profile.id,
@@ -335,9 +344,9 @@ class MatchingService:
             "recommendation": recommendation,
             "hard_failures": list(hard.failures),
             "matched_skills": serialize_skill_matches(
-                ai_result.matched_skills if ai_result else []
+                ai_result.matched_skills if ai_result else det_matched
             ),
-            "missing_skills": ai_result.missing_skills if ai_result else [],
+            "missing_skills": ai_result.missing_skills if ai_result else det_missing,
             "strong_matches": ai_result.strong_matches if ai_result else [],
             "concerns": ai_result.concerns if ai_result else [],
             "reasoning_summary": ai_result.reasoning_summary if ai_result else "Deterministic analysis only",
