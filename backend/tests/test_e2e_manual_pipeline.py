@@ -17,6 +17,7 @@ from app.main import app
 from app.providers.ai.base import MatchResult as AIMatchResult
 from app.providers.ai.base import SkillMatch
 
+
 def make_profile_payload() -> dict:
     """Fresh payload per test (unique user_id; no cross-run state)."""
     return {

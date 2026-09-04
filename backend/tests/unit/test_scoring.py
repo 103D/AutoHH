@@ -403,7 +403,12 @@ def test_default_weights_come_from_settings():
 
 def test_technical_score_uses_skill_taxonomy():
     """Alias forms in the vacancy text must match canonical candidate
-    skills ("postgres" matches "PostgreSQL") — task spec #14."""
+    skills ("postgres" matches "PostgreSQL") — task spec #14.
+
+    Match model v3: the technical score measures requirement coverage, so
+    "ETL" being required but missing lowers the score below the old 90+
+    candidate-coverage number — that is the intended semantic change.
+    """
     engine = ScoringEngine()
     candidate = CandidateProfile(
         id="11111111-1111-1111-1111-111111111111",
@@ -426,5 +431,13 @@ def test_technical_score_uses_skill_taxonomy():
         url_normalized="https://hh.kz/vacancy/777",
         raw_data={},
     )
-    score = engine.calculate_technical_score(candidate, job)
-    assert score >= 90.0
+    score, audit = engine.analyze_technical(candidate, job)
+
+    # "postgres" is recognized as PostgreSQL (taxonomy alias), "python" canonical.
+    assert audit.source == "deterministic"
+    statuses = {r.skill: r.status for r in audit.requirements}
+    assert statuses.get("PostgreSQL") == "MATCHED"
+    assert statuses.get("Python") == "MATCHED"
+    # ETL is a genuine vacancy requirement the candidate lacks -> lowers score.
+    assert statuses.get("ETL") == "MISSING"
+    assert 0 < score < 100

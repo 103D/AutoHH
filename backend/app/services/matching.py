@@ -1,6 +1,18 @@
-"""Job matching service for analyzing jobs against candidate profile."""
+"""Job matching service — pipeline orchestration (match model v3).
 
-import re
+MatchingService coordinates the pipeline and delegates domain logic to
+focused modules:
+
+    load job/profile -> deterministic scoring (app.services.scoring)
+    -> hard filters (HardFilterEngine) -> LLM cost gate
+    -> semantic merge (LLM requirements/equivalences re-run through the
+       deterministic machinery) -> recommendation -> persist.
+
+LLM boundary (match model v3): the LLM only extracts *semantics* (required
+vs preferred skills, equivalents, transferable skills, explanation). It never
+assigns a numeric score — the final number is purely deterministic.
+"""
+
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
@@ -13,65 +25,29 @@ from app.core.logging import get_logger
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.models.matching import MatchCategory, MatchResult
-from app.providers.ai.base import SkillMatch
 from app.providers.ai.factory import create_ai_provider
 from app.repositories.candidate import ResumeProfileRepository
 from app.repositories.job import JobRepository
 from app.repositories.matching import MatchResultRepository
 from app.schemas.matching import (
     GapAnalysisResponse,
-    GapItem,
     MatchResultResponse,
     SoftMatchResponse,
 )
 from app.schemas.resume import ResumeRecommendationResponse
 from app.services.candidate import CandidateService
+from app.services.gap_analysis import build_gap_items
 from app.services.hard_filters import HardFilterEngine
 from app.services.llm_cache import CachedAIProvider
+from app.services.resume_keyword_match import keyword_coverage
 from app.services.resume_selection import ResumeSelector
 from app.services.scoring import ScoringEngine
-from app.services.skill_taxonomy import skill_variants
+from app.services.scoring.skills import find_candidate_matches
+from app.services.skill_match_codec import parse_skill_match, serialize_skill_matches
 from app.services.specialization import classify_job
 from app.services.stretch_classifier import StretchClassifier
 
 logger = get_logger(__name__)
-
-# matched_skills are stored in a TEXT[] column as human-readable strings
-# ("SQL (exact, 1.0)"); plain "SQL" means exact/1.0. The AI provider returns
-# SkillMatch objects, which are serialized on persist and parsed back for
-# the API response (frontend contract: matched_skills: SkillMatch[]).
-_SKILL_MATCH_RE = re.compile(r"^(?P<skill>.+?)\s*\((?P<type>\w+)(?:,\s*(?P<conf>[\d.]+))?\)$")
-
-
-def serialize_skill_matches(skills: Any) -> list[str]:
-    """Convert AI SkillMatch objects into TEXT[]-safe strings."""
-    result: list[str] = []
-    for item in skills or []:
-        if isinstance(item, SkillMatch):
-            if item.match_type == "exact" and item.confidence == 1.0:
-                result.append(item.skill)
-            elif item.confidence == 1.0:
-                result.append(f"{item.skill} ({item.match_type})")
-            else:
-                result.append(f"{item.skill} ({item.match_type}, {item.confidence:g})")
-        elif isinstance(item, str):
-            result.append(item)
-        else:
-            result.append(str(item))
-    return result
-
-
-def parse_skill_match(raw: str) -> SkillMatch:
-    """Restore a SkillMatch from its stored string form."""
-    match = _SKILL_MATCH_RE.match((raw or "").strip())
-    if not match:
-        return SkillMatch(skill=(raw or "").strip())
-    confidence = float(match.group("conf")) if match.group("conf") else 1.0
-    return SkillMatch(
-        skill=match.group("skill"),
-        match_type=match.group("type"),
-        confidence=confidence,
-    )
 
 
 class MatchingService:
@@ -110,60 +86,51 @@ class MatchingService:
         name = getattr(self.ai_provider, "name", None)
         return str(name) if name else self.ai_provider.__class__.__name__
 
-    def _deterministic_skill_match(
-        self, profile: CandidateProfile, job: Job
-    ) -> tuple[list[str], list[str]]:
-        """Return (matched_skills, missing_skills) using deterministic token matching."""
-        job_text = f"{job.title} {job.description or ''}"
-        job_tokens = self.scoring._tokenize_text(job_text)
-        candidate_skills = set()
-        candidate_skills.update(self.scoring._normalize_skills(profile.skills))
-        candidate_skills.update(self.scoring._normalize_skills(profile.technologies))
-
-        matched, missing = [], []
-        for skill in candidate_skills:
-            if skill in self.scoring.STOPWORDS and len(skill) < 4:
-                continue
-            variants = skill_variants(skill)
-            if variants & job_tokens or self.scoring._tokenize_text(skill) & job_tokens:
-                matched.append(skill)
-            else:
-                missing.append(skill)
-        return matched, missing
+    @staticmethod
+    def _skill_lists(profile: CandidateProfile, job: Job) -> tuple[list[str], list[str]]:
+        """Candidate-stack matches/misses against the vacancy text (display only)."""
+        return find_candidate_matches(ScoringEngine.candidate_skills(profile), job)
 
     async def soft_match(self, job, profile) -> SoftMatchResponse:
         """
         Lightweight soft-match: compute score + breakdown WITHOUT persistence.
 
         Hard filters are still applied (NOT_ELIGIBLE on critical mismatch).
-        Deterministic only (no LLM). Returns SoftMatchResponse.
+        Deterministic only (no LLM). Returns SoftMatchResponse with a full
+        explainable breakdown (component scores + skill requirements audit).
         """
         hard_result = self.hard_filters.evaluate(profile, job)
         if not hard_result.passed:
             return SoftMatchResponse(
                 score=0,
                 recommendation="NOT_ELIGIBLE",
-                score_breakdown={"hard_filter_failed": True, "failures": hard_result.failures},
+                score_breakdown={
+                    "hard_filter_failed": True,
+                    "failures": hard_result.failures,
+                },
                 matched_skills=[],
                 missing_skills=[],
             )
 
-        final_score, breakdown_raw = self.scoring.calculate(profile, job)
-        breakdown = breakdown_raw.to_dict() if hasattr(breakdown_raw, "to_dict") else dict(breakdown_raw)
+        final_score, breakdown = self.scoring.calculate(profile, job)
         score = round(final_score)
 
         stretch = self.stretch_classifier.analyze(profile, job, score)
         recommendation = (
-            "STRETCH" if stretch.is_stretch
+            "STRETCH"
+            if stretch.is_stretch
             else self.scoring.get_recommendation(score)
         )
 
-        matched, missing = self._deterministic_skill_match(profile, job)
+        matched, missing = self._skill_lists(profile, job)
+
+        breakdown_dict = breakdown.to_full_dict()
+        breakdown_dict["stretch"] = stretch.to_dict()
 
         return SoftMatchResponse(
             score=score,
             recommendation=recommendation,
-            score_breakdown=breakdown,
+            score_breakdown=breakdown_dict,
             matched_skills=matched,
             missing_skills=missing,
         )
@@ -254,7 +221,6 @@ class MatchingService:
             "languages": profile.languages,
         }
 
-        ai_score = final_score
         ai_result = None
         ai_tokens = None
         ai_cost = None
@@ -263,7 +229,7 @@ class MatchingService:
         # the vacancy NOT_ELIGIBLE regardless of any score, and the LLM is
         # never consulted for ineligible vacancies (task spec #29).
         hard = self.hard_filters.evaluate(profile, job)
-        breakdown_dict: dict = {**breakdown.to_dict()}
+        breakdown_dict = breakdown.to_full_dict()
 
         llm_allowed = hard.passed and (
             not settings.llm_gate_enabled
@@ -283,17 +249,24 @@ class MatchingService:
                     candidate_profile=profile_dict,
                 )
 
-                ai_score = ai_result.score
-                final_score = round(
-                    final_score * (1 - settings.score_weight_semantic) +
-                    ai_score * settings.score_weight_semantic,
-                    1
+                # LLM boundary (match model v3): the LLM supplies semantic
+                # interpretation — requirements, importance, equivalents —
+                # and the numeric score is re-computed deterministically.
+                new_final, adjustments = self.scoring.apply_llm_requirements(
+                    ai_result, profile, breakdown
                 )
-                ai_tokens = getattr(ai_result, 'tokens_used', None)
-                ai_cost = getattr(ai_result, 'cost_usd', None)
+                if adjustments:
+                    breakdown.llm_adjustments = adjustments
+                if new_final is not None:
+                    final_score = new_final
+                breakdown_dict = breakdown.to_full_dict()
+                ai_tokens = getattr(ai_result, "tokens_used", None)
+                ai_cost = getattr(ai_result, "cost_usd", None)
 
             except Exception as e:
-                logger.warning(f"AI analysis failed for job {job_id}, using deterministic only: {e}")
+                logger.warning(
+                    f"AI analysis failed for job {job_id}, using deterministic only: {e}"
+                )
         elif not hard.passed:
             analysis_outcome = "hard_filtered"
             metrics.inc_llm(self._provider_name(), "hard_filtered")
@@ -316,7 +289,9 @@ class MatchingService:
 
         if not hard.passed:
             # NOT_ELIGIBLE is assigned by hard filters, not by the score.
+            # The persisted score is forced to 0 (consistent with soft_match).
             recommendation = MatchCategory.NOT_ELIGIBLE
+            final_score = 0.0
         else:
             recommendation = self.scoring.get_recommendation(final_score)
 
@@ -335,7 +310,7 @@ class MatchingService:
         now = datetime.now(UTC).isoformat()
 
         # When AI didn't run, fall back to deterministic skill matching.
-        det_matched, det_missing = self._deterministic_skill_match(profile, job)
+        det_matched, det_missing = self._skill_lists(profile, job)
 
         match_data = {
             "job_id": job_id,
@@ -415,6 +390,7 @@ class MatchingService:
             strong_matches=match.strong_matches,
             concerns=match.concerns,
             reasoning_summary=match.reasoning_summary or "",
+            score_breakdown=dict(breakdown),
             stretch_analysis=breakdown.get("stretch"),
             analyzed_at=match.analyzed_at,
         )
@@ -456,33 +432,6 @@ class MatchingService:
         )
         return self._to_response(updated)
 
-    def _build_gaps(
-        self,
-        profile: CandidateProfile,
-        job: Job,
-        match: MatchResult,
-    ) -> list[GapItem]:
-        """Build the skill/experience gap list for a job."""
-        gaps: list[GapItem] = []
-
-        missing = list(match.missing_skills or [])
-        if not missing:
-            missing = self.stretch_classifier.find_missing_key_skills(profile, job)
-        for skill in missing[:10]:
-            gaps.append(GapItem(skill=skill, gap_type="missing", priority="high"))
-
-        required_years = self.stretch_classifier.extract_required_experience(job)
-        if required_years and profile.experience_years is not None:
-            if required_years > profile.experience_years:
-                gaps.append(
-                    GapItem(
-                        skill=f"{required_years}+ years experience",
-                        gap_type="experience",
-                        priority="medium",
-                    )
-                )
-        return gaps
-
     async def get_gap_analysis(
         self,
         job_id: UUID,
@@ -505,7 +454,7 @@ class MatchingService:
             )
 
         stretch = self.stretch_classifier.analyze(profile, job, match.score)
-        gaps = self._build_gaps(profile, job, match)
+        gaps = build_gap_items(profile, job, match, self.stretch_classifier)
         effective = self.effective_recommendation(match)
 
         summary = (
@@ -534,47 +483,11 @@ class MatchingService:
         """
         Match a specific resume version against a job.
 
-        Args:
-            resume_text: Resume text content
-            job_id: Job ID to match against
-
-        Returns:
-            Dict with coverage percentage, matched and missing keywords
+        Delegates to the pure ``keyword_coverage`` helper
+        (app.services.resume_keyword_match): no ORM, no AI.
         """
         job = await self.job_repository.get(job_id)
         if not job:
             raise NotFoundError(f"Job {job_id} not found")
 
-        # Extract keywords from resume
-        resume_tokens = self.scoring._tokenize_text(resume_text)
-
-        # Extract keywords from job
-        job_text = f"{job.title} {job.description}"
-        job_tokens = self.scoring._tokenize_text(job_text)
-
-        # Find overlap
-        matched = resume_tokens & job_tokens
-        missing = job_tokens - resume_tokens
-
-        # Filter to meaningful tokens (length > 2, not common words)
-        common_words = {
-            "the", "and", "for", "with", "you", "are", "our", "your", "this",
-            "that", "from", "have", "will", "can", "not", "but", "all", "any",
-            "who", "what", "when", "how", "why", "was", "were", "been", "being",
-            "their", "there", "them", "then", "than", "into", "out", "about",
-            "they", "she", "him", "her", "his", "its", "one", "two", "new",
-            "use", "used", "using", "get", "got", "put", "set", "let",
-        }
-        meaningful_matched = {t for t in matched if len(t) > 2 and t not in common_words}
-        meaningful_missing = {t for t in missing if len(t) > 2 and t not in common_words}
-
-        total = len(meaningful_matched) + len(meaningful_missing)
-        coverage = round(len(meaningful_matched) / total * 100, 1) if total > 0 else 0.0
-
-        return {
-            "job_id": str(job_id),
-            "job_title": job.title,
-            "coverage_pct": coverage,
-            "matched_keywords": sorted(meaningful_matched),
-            "missing_keywords": sorted(meaningful_missing),
-        }
+        return keyword_coverage(resume_text, job)

@@ -30,6 +30,15 @@ class MatchResultBase(BaseModel):
     strong_matches: list[str] = Field(default_factory=list)
     concerns: list[str] = Field(default_factory=list)
     reasoning_summary: str = Field(description="Explanation of the match")
+    score_breakdown: dict = Field(
+        default_factory=dict,
+        description=(
+            "Deterministic component scores plus explainability: per-skill "
+            "requirement statuses (REQUIRED/PREFERRED/OPTIONAL x "
+            "MATCHED/PARTIAL/MISSING/UNKNOWN), missing_required, score_caps, "
+            "llm_adjustments, stretch (match model v3)."
+        ),
+    )
     stretch_analysis: dict | None = Field(
         default=None, description="Stretch-vacancy classification details"
     )

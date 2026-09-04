@@ -13,12 +13,46 @@ class SkillMatch(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, default=1.0)
 
 
-class MatchResult(BaseModel):
-    """Result of AI job analysis."""
+class JobRequirement(BaseModel):
+    """A skill requirement extracted from a vacancy by the LLM.
 
-    score: int = Field(ge=0, le=100, description="Overall compatibility score")
+    The LLM owns *semantic interpretation*: naming, normalization and the
+    REQUIRED/PREFERRED/OPTIONAL classification. The numeric score is computed
+    deterministically from these requirements by the scoring engine — the LLM
+    never assigns the score itself (match model v3).
+    """
+
+    skill: str
+    importance: str = "REQUIRED"  # REQUIRED | PREFERRED | OPTIONAL
+    note: str | None = None
+
+
+class SkillEquivalence(BaseModel):
+    """A transferable/equivalent skill pair identified by the LLM.
+
+    ``job_skill`` is a requirement that the candidate does not formally list;
+    ``candidate_skill`` is the skill the candidate actually has that can be
+    presented as related. The equivalence upgrades the requirement status to
+    PARTIAL in the deterministic machinery.
+    """
+
+    job_skill: str
+    candidate_skill: str
+    note: str | None = None
+
+
+class MatchResult(BaseModel):
+    """Result of AI job analysis.
+
+    ``score``/``recommendation`` are kept for backward compatibility with the
+    provider contract but are NOT used in the final match verdict anymore —
+    the engine recomputes everything deterministically from ``requirements``
+    and ``skill_equivalences`` (match model v3).
+    """
+
+    score: int = Field(ge=0, le=100, description="Advisory compatibility score (ignored by the engine)")
     recommendation: str = Field(
-        description="One of: HIGH_PRIORITY, APPLY, REVIEW, IGNORE"
+        description="One of: HIGH_PRIORITY, APPLY, REVIEW, IGNORE (advisory)"
     )
     matched_skills: list[SkillMatch] = Field(default_factory=list)
     missing_skills: list[str] = Field(default_factory=list)
@@ -37,6 +71,24 @@ class MatchResult(BaseModel):
     )
     experience_match: bool | None = Field(
         default=None, description="Whether experience level aligns"
+    )
+    # --- semantic interpretation (match model v3) ---
+    requirements: list[JobRequirement] = Field(
+        default_factory=list,
+        description=(
+            "Vacancy skill requirements classified REQUIRED/PREFERRED/OPTIONAL. "
+            "Used by the engine to re-score deterministically."
+        ),
+    )
+    skill_equivalences: list[SkillEquivalence] = Field(
+        default_factory=list,
+        description="Transferable/equivalent skills (downgrade MISSING -> PARTIAL).",
+    )
+    seniority_signal: str | None = Field(
+        default=None, description="Inferred seniority of the role"
+    )
+    domain_signal: str | None = Field(
+        default=None, description="Inferred domain (e.g. retail, product)"
     )
     tokens_used: int | None = Field(
         default=None, description="Number of tokens used in this request"

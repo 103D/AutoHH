@@ -78,7 +78,16 @@ class HardFilterEngine:
         years = profile.experience_years
         if required is None or years is None:
             return
-        max_allowed = years * settings.hard_experience_max_factor
+        # Business rule (documented in config): a vacancy may require at most
+        # ``hard_experience_max_factor`` x the candidate's experience, but the
+        # candidate always gets a ``hard_experience_max_gap`` absolute buffer.
+        # The gap exists so a junior whose profile lists 0 documented years is
+        # still eligible for entry-level vacancies ("1+ year") — otherwise any
+        # 0 x factor = 0 would silently block every vacancy.
+        max_allowed = max(
+            years * settings.hard_experience_max_factor,
+            years + settings.hard_experience_max_gap,
+        )
         if required > max_allowed:
             result.fail(
                 "experience",

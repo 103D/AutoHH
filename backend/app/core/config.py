@@ -48,7 +48,8 @@ class Settings(BaseSettings):
     hh_user_agent: str = "JobHunter/0.1.0 (contact@yourdomain.com)"
 
     # Scoring Weights — deterministic components (normalized to 1.0 in ScoringEngine)
-    score_weight_semantic: float = 0.4  # AI vs deterministic merge weight
+    score_weight_semantic: float = 0.4  # deprecated: LLM no longer blends into the
+                                        # final score; kept for env back-compat only
     score_weight_technical: float = 0.30
     score_weight_experience: float = 0.20
     score_weight_location: float = 0.10
@@ -57,9 +58,28 @@ class Settings(BaseSettings):
     score_weight_education: float = 0.10
     score_weight_language: float = 0.10
 
+    # Skill importance weights inside the technical component (match model v3).
+    # REQUIRED skills are weighted 3x vs OPTIONAL so their absence visibly
+    # dominates the technical score.
+    score_required_skill_weight: float = 3.0
+    score_preferred_skill_weight: float = 1.5
+    score_optional_skill_weight: float = 0.5
+
+    # Soft cap for missing REQUIRED skills (match model v3): the final score
+    # cannot exceed (100 - N * penalty). A missing mandatory skill is always
+    # visible — in the technical component, in the cap and in the breakdown —
+    # but is NOT a hard blocker on its own.
+    score_missing_required_penalty: float = 25.0
+
     # Hard requirements (task spec #8): any critical failure => NOT_ELIGIBLE
     hard_filters_enabled: bool = True
+    # Business rule: a vacancy may require at most 1.5x the candidate's
+    # experience. Documented and configurable (not a hidden heuristic).
     hard_experience_max_factor: float = 1.5
+    # Absolute growth buffer so a junior with 0 documented years can still be
+    # eligible for entry vacancies ("1+ year") instead of being auto-blocked.
+    # Effective allowance = max(years * factor, years + gap).
+    hard_experience_max_gap: float = 2.0
     hard_salary_tolerance: float = 0.20
 
     # LLM cost gate (task spec #29): skip AI analysis when the deterministic

@@ -45,6 +45,7 @@ export interface MatchResult {
   strong_matches: string[]
   concerns: string[]
   reasoning_summary: string
+  score_breakdown?: ScoreBreakdown
   stretch_analysis?: StretchAnalysis | null
   analyzed_at: string
 }
@@ -86,6 +87,52 @@ export interface StretchAnalysis {
   blockers: string[]
   missing_key_skills: string[]
   required_experience_years: number | null
+}
+
+// === Score explainability (match model v3) ===
+
+export type SkillImportance = 'REQUIRED' | 'PREFERRED' | 'OPTIONAL'
+export type SkillMatchStatus = 'MATCHED' | 'PARTIAL' | 'MISSING' | 'UNKNOWN'
+
+export interface SkillRequirement {
+  skill: string
+  importance: SkillImportance
+  status: SkillMatchStatus
+  source: 'deterministic' | 'llm'
+  note: string | null
+}
+
+export interface SkillAudit {
+  source: 'deterministic' | 'llm' | 'heuristic'
+  required: SkillRequirement[]
+  preferred: SkillRequirement[]
+  optional: SkillRequirement[]
+  missing_required: string[]
+  matched: string[]
+  missing: string[]
+  unknown: string[]
+}
+
+export interface ScoreCap {
+  reason: string
+  cap: number
+}
+
+// Component scores are always present; the explainability blocks below are
+// added by the v3 engine and are optional for backward compatibility.
+export interface ScoreBreakdown {
+  technical: number
+  experience: number
+  location: number
+  salary: number
+  work_format: number
+  education: number
+  language: number
+  skills?: SkillAudit
+  score_caps?: ScoreCap[]
+  llm_adjustments?: Record<string, any>
+  stretch?: StretchAnalysis
+  [key: string]: any
 }
 
 export interface GapItem {
@@ -304,7 +351,7 @@ export interface ManualJobImportResponse {
 export interface SoftMatchResponse {
   score: number
   recommendation: string
-  score_breakdown: Record<string, number>
+  score_breakdown: ScoreBreakdown
   matched_skills: string[]
   missing_skills: string[]
 }

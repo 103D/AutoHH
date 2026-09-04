@@ -144,3 +144,40 @@ def test_disabled_via_settings(engine, profile, job, monkeypatch):
     monkeypatch.setattr(settings, "hard_filters_enabled", False)
     job.experience_required = 10
     assert engine.evaluate(profile, job).passed
+
+
+# --- hard_experience_max_factor / hard_experience_max_gap (documented rule) ---
+
+
+def test_junior_zero_years_not_blocked_by_gap(engine, profile, job):
+    """0 documented years must not silently block an entry vacancy.
+
+    With only the multiplicative factor, 0 x 1.5 = 0 would block every
+    vacancy; the absolute gap buffer (years + gap) keeps entry roles open.
+    """
+    profile.experience_years = 0
+    job.experience_required = 1  # entry "1+ year"; max(0*1.5, 0+2) = 2
+    assert engine.evaluate(profile, job).passed
+
+
+def test_junior_zero_years_blocked_above_gap(engine, profile, job):
+    profile.experience_years = 0
+    job.experience_required = 5  # way above the 0 + 2 buffer
+    result = engine.evaluate(profile, job)
+    assert not result.passed
+    assert any(f.startswith("experience") for f in result.failures)
+
+
+def test_experience_exactly_at_boundary_passes(engine, profile, job):
+    # candidate 3y, gap 2 -> allowed up to max(4.5, 5) = 5
+    profile.experience_years = 3
+    job.experience_required = 5
+    assert engine.evaluate(profile, job).passed
+
+
+def test_experience_just_above_boundary_fails(engine, profile, job):
+    profile.experience_years = 3
+    job.experience_required = 6  # above the allowed 5
+    result = engine.evaluate(profile, job)
+    assert not result.passed
+    assert any(f.startswith("experience") for f in result.failures)

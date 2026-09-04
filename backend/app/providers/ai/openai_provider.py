@@ -135,12 +135,22 @@ class OpenAIProvider:
         job_requirements: dict | None,
         candidate_profile: dict,
     ) -> str:
-        """Build the analysis prompt."""
+        """Build the analysis prompt (semantic interpretation, match model v3).
+
+        The LLM extracts: requirements (REQUIRED/PREFERRED/OPTIONAL),
+        matched/missing skills, transferable equivalents, strengths/concerns,
+        domain and seniority signals. The final 0-100 score is computed
+        deterministically by the engine and MUST NOT be invented here.
+        """
         requirements_text = ""
         if job_requirements:
             requirements_text = f"\nJob Requirements:\n{json.dumps(job_requirements, indent=2)}"
 
-        return f"""Analyze this job posting against the candidate profile and provide a match assessment.
+        return f"""Analyze this job posting against the candidate profile.
+
+Your role is SEMANTIC INTERPRETATION, not scoring. A deterministic engine
+computes the numeric score from the requirements you extract, so never invent
+a final score that contradicts the facts.
 
 JOB POSTING:
 Title: {job_title}
@@ -154,8 +164,14 @@ CANDIDATE PROFILE:
 
 Provide your analysis as JSON with this exact structure:
 {{
-  "score": <integer 0-100>,
+  "score": <integer 0-100, advisory only - the engine recomputes it deterministically>,
   "recommendation": "HIGH_PRIORITY" or "APPLY" or "REVIEW" or "IGNORE",
+  "requirements": [
+    {{"skill": "SQL", "importance": "REQUIRED", "note": "mentioned in requirements section"}}
+  ],
+  "skill_equivalences": [
+    {{"job_skill": "Airflow", "candidate_skill": "dbt", "note": "transferable ETL orchestration experience"}}
+  ],
   "matched_skills": [{{"skill": "name", "match_type": "exact|partial|related", "confidence": 0.0-1.0}}],
   "missing_skills": ["skill1", "skill2"],
   "strong_matches": ["match1", "match2"],
@@ -163,16 +179,22 @@ Provide your analysis as JSON with this exact structure:
   "reasoning_summary": "Brief explanation",
   "salary_match": true/false/null,
   "location_match": true/false/null,
-  "experience_match": true/false/null
+  "experience_match": true/false/null,
+  "seniority_signal": "junior|middle|senior|lead|null",
+  "domain_signal": "retail|product|bi|general|null"
 }}
 
-Scoring guidelines:
-- 90-100: HIGH_PRIORITY - Excellent fit, apply immediately
-- 75-89: APPLY - Good fit, should apply
-- 60-74: REVIEW - Moderate fit, consider carefully
-- 0-59: IGNORE - Poor fit, skip
-
-Be objective and realistic in your assessment."""
+Requirements extraction rules:
+- "requirements" MUST list the skills the vacancy asks for.
+- "importance" MUST be REQUIRED for mandatory skills ("must", "required",
+  "обязательно", "необходимо"); PREFERRED for strong plus ("будет плюсом",
+  "preferred", "nice to have"); OPTIONAL for the rest.
+- Normalize skill names to their canonical form (PostgreSQL not "postgres",
+  Power BI not "powerBI").
+- "skill_equivalences": only facts — a candidate skill that proves the same
+  or overlapping competence for a required skill (e.g. dbt for Airflow,
+  Tableau for Power BI). Do NOT list random adjacent technologies.
+- Be objective and realistic: gaps are expected; honesty beats optimism."""
 
     async def analyze_job(
         self,

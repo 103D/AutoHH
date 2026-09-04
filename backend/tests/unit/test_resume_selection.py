@@ -129,6 +129,38 @@ def test_skills_matched_via_taxonomy():
     assert any("PostgreSQL" in r for r in result.reasons)
 
 
+def test_multi_spec_job_picks_best_profile_not_first():
+    """A vacancy with several suitable specializations must pick the best
+    matching profile, not the first one in the list."""
+    selector = ResumeSelector()
+    # Listed first but only weakly relevant to this retail-leaning job.
+    generic = make_profile(
+        profile_name="cv_generic",
+        specialization="DATA_ANALYST",
+        specialization_keywords=["generic reporting"],
+        selected_skills=[],
+    )
+    # Better fit: retail specialization + matching domain keywords/skills.
+    retail = make_profile(
+        profile_name="cv_retail",
+        specialization="RETAIL_COMMERCIAL_ANALYST",
+        specialization_keywords=["retail analytics", "sales"],
+        selected_skills=["SQL"],
+    )
+    job = make_job(
+        title="Retail Data Analyst",
+        description="Retail analytics and sales reporting in SQL.",
+        specializations=["DATA_ANALYST", "RETAIL_COMMERCIAL_ANALYST"],
+    )
+
+    # Retail profile is passed SECOND; selection must still prefer it.
+    result = selector.recommend(job, [generic, retail])
+
+    assert result.recommended_profile_name == "cv_retail"
+    assert result.recommended_specialization == "RETAIL_COMMERCIAL_ANALYST"
+    assert result.scores[0].profile_name == "cv_retail"
+
+
 def test_legacy_job_without_specializations_field():
     """Jobs created before Phase 2 may have specializations=None."""
     selector = ResumeSelector()
