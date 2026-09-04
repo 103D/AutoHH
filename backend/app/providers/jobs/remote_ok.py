@@ -51,7 +51,14 @@ class RemoteOkProvider:
             for item in data:
                 if not isinstance(item, dict) or not item.get("id") or not item.get("position"):
                     continue  # skip the metadata entry and malformed records
-                jobs.append(self._parse_vacancy(item))
+                # One malformed vacancy must not fail the whole batch.
+                try:
+                    jobs.append(self._parse_vacancy(item))
+                except Exception as e:
+                    logger.warning(
+                        f"Skipping malformed RemoteOK vacancy {item.get('id')!r}: {e}"
+                    )
+                    continue
                 if len(jobs) >= limit:
                     break
 

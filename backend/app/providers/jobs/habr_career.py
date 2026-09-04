@@ -62,7 +62,14 @@ class HabrCareerProvider:
                     postings = extract_jobposting_blocks(response.text)
                     if not postings:
                         break  # structure changed or empty page: stop gracefully
-                    jobs.extend(self._parse_jobposting(p) for p in postings)
+                    for posting in postings:
+                        # One malformed vacancy must not fail the whole batch.
+                        try:
+                            jobs.append(self._parse_jobposting(posting))
+                        except Exception as e:
+                            logger.warning(
+                                f"Skipping malformed Habr Career posting: {e}"
+                            )
 
             logger.info(f"Fetched {len(jobs)} jobs from Habr Career")
             return jobs[:limit]

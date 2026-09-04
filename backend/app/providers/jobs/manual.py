@@ -57,11 +57,20 @@ class ManualProvider:
                 continue
             if query:
                 haystack = " ".join(
-                    str(entry.get(field, "")) for field in ("title", "company", "description")
+                    str(entry.get(field) or "")
+                    for field in ("title", "company", "description")
                 ).lower()
                 if query.lower() not in haystack:
                     continue
-            jobs.append(self._parse_entry(entry))
+            # One malformed entry must not fail the whole batch.
+            try:
+                jobs.append(self._parse_entry(entry))
+            except Exception as e:
+                logger.warning(
+                    f"Skipping invalid manual job entry "
+                    f"{entry.get('external_id') or entry.get('title')!r}: {e}"
+                )
+                continue
             if len(jobs) >= limit:
                 break
 

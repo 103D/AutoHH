@@ -86,7 +86,17 @@ class SuperJobProvider:
                 data = response.json()
 
                 objects = data.get("objects", [])
-                jobs = [self._parse_vacancy(o) for o in objects if isinstance(o, dict)]
+                jobs = []
+                for obj in objects:
+                    if not isinstance(obj, dict):
+                        continue
+                    # One malformed vacancy must not fail the whole batch.
+                    try:
+                        jobs.append(self._parse_vacancy(obj))
+                    except Exception as e:
+                        logger.warning(
+                            f"Skipping malformed SuperJob vacancy {obj.get('id')!r}: {e}"
+                        )
                 logger.info(f"Fetched {len(jobs)} jobs from SuperJob")
                 return jobs
 

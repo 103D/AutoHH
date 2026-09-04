@@ -2,18 +2,25 @@
 
 Real logic lives in ``app.services.ingestion.SourceFetchPipeline`` (testable
 without a broker). This module only:
-- defines the Celery task names / retry policy (provider HTTP errors retry
-  with backoff);
+- defines the Celery task names / retry policy;
 - schedules per-source tasks from the list of enabled sources.
+
+Retry semantics (task spec: transient vs permanent failures):
+- the pipeline raises ``TransientFetchError`` (incl. ``RateLimitError``) for
+  network/timeout/5xx/429/DB-outage failures -> retried here with exponential
+  backoff (max 3 attempts);
+- permanent failures (4xx, auth, configuration) are recorded in source health
+  by the pipeline and returned as an error status — they never reach
+  ``autoretry_for``, so they are never retried.
 """
 
 import asyncio
 from uuid import UUID
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import get_engine
+from app.providers.jobs.exceptions import TransientFetchError
 from app.repositories.job import JobSourceRepository
 from app.services.ingestion import SourceFetchPipeline
 from app.services.job import JobSourceService
@@ -22,7 +29,7 @@ from app.workers.celery_app import celery_app
 
 @celery_app.task(
     name="fetch_jobs_from_source",
-    autoretry_for=(httpx.HTTPError,),
+    autoretry_for=(TransientFetchError,),
     retry_backoff=True,
     retry_backoff_max=300,
     retry_jitter=True,

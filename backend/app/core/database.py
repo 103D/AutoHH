@@ -19,7 +19,20 @@ _engine: AsyncEngine | None = None
 
 
 def get_engine() -> AsyncEngine:
-    """Create or return existing async engine (lazy initialization)."""
+    """Create or return existing async engine (lazy initialization).
+
+    The engine is a process-wide singleton bound to the event loop of its
+    first use. Safe consumers:
+    - the FastAPI app (a single event loop per process);
+    - async Celery workers (one loop per worker process);
+    - sync Celery workers that call ``asyncio.run()`` per task MUST recreate
+      the engine per loop (``reset_engine()`` then ``get_engine()``) or use a
+      ``NullPool`` engine: sharing pooled asyncpg connections across event
+      loops fails with "attached to a different loop".
+
+    ``SourceFetchPipeline`` accepts an injected ``session_factory`` so tests
+    (and exotic runtimes) can bypass this singleton entirely.
+    """
     global _engine
 
     if _engine is None:

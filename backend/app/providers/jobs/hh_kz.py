@@ -107,7 +107,12 @@ class HeadHunterKZProvider:
 
                 jobs = []
                 for item in data.get("items", []):
-                    jobs.append(self._parse_vacancy(item))
+                    # One malformed vacancy must not fail the whole batch.
+                    try:
+                        jobs.append(self._parse_vacancy(item))
+                    except Exception as e:
+                        job_id = item.get("id") if isinstance(item, dict) else repr(item)
+                        logger.warning(f"Skipping malformed HH vacancy {job_id}: {e}")
 
                 logger.info(f"Fetched {len(jobs)} jobs from HeadHunter")
                 return jobs

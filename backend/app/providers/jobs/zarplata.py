@@ -53,7 +53,13 @@ class ZarplataProvider:
                 response.raise_for_status()
 
             postings = extract_jobposting_blocks(response.text)
-            jobs = [self._parse_jobposting(p) for p in postings]
+            jobs = []
+            for posting in postings:
+                # One malformed vacancy must not fail the whole batch.
+                try:
+                    jobs.append(self._parse_jobposting(posting))
+                except Exception as e:
+                    logger.warning(f"Skipping malformed Zarplata posting: {e}")
             logger.info(f"Fetched {len(jobs)} jobs from Zarplata.ru")
             return jobs[:limit]
 
