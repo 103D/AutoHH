@@ -5,9 +5,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.matching import MatchCategory
 from app.repositories.application import (
@@ -21,6 +23,7 @@ from app.repositories.notification import NotificationRepository
 from app.services.application import ApplicationService
 from app.services.candidate import CandidateService
 from app.services.matching import MatchingService
+from app.services.telegram_inbound import TelegramInboundService
 from app.services.telegram_v2 import TelegramDigestAdapter
 
 logger = get_logger(__name__)
@@ -123,8 +126,17 @@ async def telegram_webhook(
     Handle Telegram webhook updates.
 
     Processes callback queries from inline keyboard buttons (both legacy
-    adapter actions and v2 digest actions: study/package/star/skip).
+    adapter actions and v2 digest actions: study/package/star/skip) and
+    inbound text messages (job links, resumes, /score /train /resume
+    commands) via TelegramInboundService.
     """
+    expected_secret = settings.telegram_webhook_secret
+    if expected_secret and request.headers.get(
+        "X-Telegram-Bot-Api-Secret-Token"
+    ) != expected_secret:
+        logger.warning("Telegram webhook rejected: secret token mismatch")
+        return JSONResponse({"ok": False}, status_code=403)
+
     try:
         update = await request.json()
     except Exception as e:
@@ -148,7 +160,30 @@ async def telegram_webhook(
 
         await telegram.answer_callback(callback_id, response_text)
 
+    message = update.get("message") or update.get("edited_message")
+    if isinstance(message, dict) and isinstance(message.get("text"), str):
+        reply = await _handle_message_update(session, message)
+        if reply:
+            chat_id = str((message.get("chat") or {}).get("id", ""))
+            await TelegramDigestAdapter().send_message(chat_id, reply)
+
     return {"ok": True}
+
+
+async def _handle_message_update(session: AsyncSession, message: dict) -> str | None:
+    """Run the inbound flow for one message; never raises to the webhook."""
+    chat_id = str((message.get("chat") or {}).get("id", ""))
+    allowed = settings.telegram_allowed_chat_ids
+    if allowed and chat_id and chat_id not in allowed:
+        logger.warning(f"Ignoring Telegram message from unauthorized chat {chat_id}")
+        return None
+
+    inbound = TelegramInboundService(session)
+    try:
+        return await inbound.handle_message(message["text"])
+    except Exception as e:
+        logger.error(f"Telegram inbound handling failed: {e}")
+        return "⚠️ Внутренняя ошибка при обработке сообщения. Попробуйте позже."
 
 
 async def _record_legacy_callback(

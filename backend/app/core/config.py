@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    # Optional webhook secret (Telegram sets the
+    # X-Telegram-Bot-Api-Secret-Token header; setWebhook secret_token param).
+    telegram_webhook_secret: str | None = None
+    # Additional chat IDs allowed to talk to the bot (comma-separated).
+    # The primary chat is telegram_chat_id; extra chats (e.g. a private chat
+    # alongside a group) go here so the inbound flow accepts both.
+    telegram_extra_chat_ids: str | None = None
+    telegram_webhook_secret: str | None = None
 
     # Job Fetching
     job_fetch_interval_minutes: int = 30
@@ -139,6 +147,19 @@ class Settings(BaseSettings):
                 stacklevel=2,
             )
         return v
+
+
+    @property
+    def telegram_allowed_chat_ids(self) -> set[str]:
+        """All chat IDs permitted to interact with the bot (primary + extra)."""
+        ids: set[str] = set()
+        if self.telegram_chat_id:
+            ids.add(str(self.telegram_chat_id))
+        for raw in (self.telegram_extra_chat_ids or "").split(","):
+            cid = raw.strip()
+            if cid:
+                ids.add(cid)
+        return ids
 
 
 def get_settings() -> Settings:

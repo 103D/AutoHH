@@ -1,5 +1,7 @@
 """Telegram bot adapter for sending job match notifications."""
 
+import re
+
 import httpx
 
 from app.core.config import settings
@@ -8,6 +10,14 @@ from app.models.job import Job
 from app.models.matching import MatchResult
 
 logger = get_logger(__name__)
+
+
+_TOKEN_RE = re.compile(r"/bot[A-Za-z0-9_-]{20,}:[A-Za-z0-9_-]{20,}")
+
+
+def _safe_err(exc: BaseException) -> str:
+    """Stringify an exception without leaking the bot token from request URLs."""
+    return _TOKEN_RE.sub("/bot***", str(exc))
 
 
 class TelegramBotAdapter:
@@ -121,7 +131,51 @@ class TelegramBotAdapter:
                 return None
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to send Telegram notification: {e}")
+            logger.error(f"Failed to send Telegram notification: {_safe_err(e)}")
+            return None
+
+    async def send_message(
+        self,
+        chat_id: str | int,
+        text: str,
+        reply_markup: dict | None = None,
+        parse_mode: str | None = None,
+    ) -> str | None:
+        """
+        Send a plain message to a chat (used by the inbound flow).
+
+        Returns:
+            Telegram message ID if successful, None otherwise.
+        """
+        if not self.bot_token:
+            logger.warning("Telegram not configured, cannot send message")
+            return None
+
+        payload: dict = {"chat_id": chat_id, "text": text[:4096]}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.BASE_URL}/bot{self.bot_token}/sendMessage",
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get("ok"):
+                    message_id = str(data["result"]["message_id"])
+                    logger.info(f"Telegram message sent: message_id={message_id}")
+                    return message_id
+
+                logger.error(f"Telegram API error: {data}")
+                return None
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to send Telegram message: {_safe_err(e)}")
             return None
 
     async def handle_callback(self, callback_data: str) -> str:
@@ -168,5 +222,5 @@ class TelegramBotAdapter:
                 response.raise_for_status()
                 return response.json().get("ok", False)
         except httpx.HTTPError as e:
-            logger.error(f"Failed to answer callback: {e}")
+            logger.error(f"Failed to answer callback: {_safe_err(e)}")
             return False

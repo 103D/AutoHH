@@ -16,7 +16,7 @@ Dockerized система автоматического поиска работ
 | **Frontend** | ✅ Готов | React 18 + Vite, фильтры, Kanban, детали |
 | **HeadHunter KZ / Remote** | 🔑 Требует регистрации | Нужен App ID с https://dev.hh.ru/ |
 | **AI Semantic Analysis** | 🔑 Требует API key | OpenAI / OpenRouter / OmniRoute |
-| **Telegram уведомления** | 🔑 Требует Bot Token | Webhook + inline-кнопки |
+| **Telegram бот** | 🔑 Требует Bot Token | Webhook, inline-кнопки, входящие ссылки/резюме, /score и /train |
 | **Habr Career** | ❌ Scraper устарел | Отключён по умолчанию |
 | **Zarplata** | ❌ Scraper устарел | Отключён по умолчанию |
 | **SuperJob** | 🔑 Требует API key | Отключён по умолчанию |
@@ -38,7 +38,7 @@ Dockerized система автоматического поиска работ
 
 - Docker + Docker Compose
 - (Опционально) OpenAI / OpenRouter API key для AI-анализа
-- (Опционально) Telegram Bot Token для уведомлений
+- (Опционально) Telegram Bot Token для уведомлений и приёма ссылок/резюме через бота
 - (Для HH) Зарегистрированное приложение на https://dev.hh.ru/
 
 ### Запуск
@@ -224,7 +224,7 @@ AI вызывается только если:
 | GET | `/api/v1/applications/statistics` | Статистика (interview rate, response rate) |
 | GET/PUT | `/api/v1/profile` | Профиль кандидата |
 | GET/POST/DELETE | `/api/v1/profile/{id}/resumes` | Версии резюме |
-| POST | `/api/v1/telegram/webhook` | Telegram webhook |
+| POST | `/api/v1/telegram/webhook` | Telegram webhook: callback-кнопки + входящие сообщения (ссылка → импорт и оценка, резюме → профиль, /score, /train) |
 
 ## Scheduled Tasks
 
