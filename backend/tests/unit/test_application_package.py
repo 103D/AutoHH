@@ -15,7 +15,7 @@ ORIGINAL_RESUME = (
 )
 
 ADAPTED_RESUME = (
-    "Муллахимов Дияр\nSenior-ready Data Analyst\nОпыт 2 года (BI dashboards)\n"
+    "Муллахимов Дияр\nData Analyst\nОпыт 2 года (dashboards)\n"
     "Навыки: SQL, PostgreSQL, Python, pandas, Power BI, dashboards, etl\n"
     "Анализ данных розничной сети, dashboards, etl-процессы, аналитик.\n"
 )
@@ -35,11 +35,14 @@ JOB = SimpleNamespace(
 
 PROFILE = SimpleNamespace(
     id=uuid4(),
-    skills=["SQL", "PostgreSQL", "Python", "pandas", "Power BI"],
+    skills=["SQL", "PostgreSQL", "Python", "pandas", "Power BI", "ETL"],
     technologies={"databases": ["PostgreSQL"]},
     experience_years=2,
-    desired_positions=["Аналитик данных"],
+    desired_positions=["Аналитик данных", "Data Analyst"],
     education=[{"degree": "Bachelor", "field": "IT"}],
+    experience=[{"company": "Safia", "title": "Аналитик данных"}],
+    projects=[{"name": "Retail Dashboard", "role": "Data Analyst"}],
+    certifications=[{"name": "Google Data Analytics", "issuer": "Google"}],
     additional_preferences={"full_name": "Дияр Муллахимов"},
     resume_versions={"original": ORIGINAL_RESUME},
 )
@@ -142,7 +145,7 @@ class TestBuildPackage:
         # Resume was adapted from the original stored text
         assert ai.adapt_calls[0]["resume_text"] == ORIGINAL_RESUME
         assert ai.adapt_calls[0]["job_title"] == "Data Analyst"
-        # Missing skills from the match result are highlighted
+        # Job requirements are context for the rewriter, not candidate claims.
         assert "Tableau" in ai.adapt_calls[0]["key_requirements"]
 
     @pytest.mark.asyncio
@@ -150,11 +153,11 @@ class TestBuildPackage:
         hallucinated = ORIGINAL_RESUME + "\nРаботал с React и Kubernetes.\n"
         service, application, _ = _make_service(adapted=hallucinated)
 
-        result = await service.build_package(application.id)
+        with pytest.raises(ValidationError, match="unsupported claims"):
+            await service.build_package(application.id)
 
-        validation = result.package_data["validation"]["resume"]
-        assert validation["is_valid"] is False
-        assert validation["issues"]
+        assert application.status == "SAVED"
+        assert application.package_data is None
 
     @pytest.mark.asyncio
     async def test_improvement_score_positive(self):
@@ -200,6 +203,40 @@ class TestBuildPackage:
 
         with pytest.raises(NotFoundError):
             await service.build_package(application.id)
+
+    @pytest.mark.asyncio
+    async def test_ai_failure_keeps_original_resume_without_claiming_job_requirements(self):
+        service, application, _ = _make_service()
+
+        async def fail_adaptation(**_kwargs):
+            raise RuntimeError("provider unavailable")
+
+        service.ai_provider.adapt_resume = fail_adaptation
+
+        result = await service.build_package(application.id)
+
+        assert result.status == "PREPARED"
+        assert result.package_data["adapted_resume"] == ORIGINAL_RESUME
+        assert result.package_data["ai_used"] is False
+        assert "Tableau" not in result.package_data["adapted_resume"]
+
+    @pytest.mark.asyncio
+    async def test_cover_letter_may_name_target_job_without_claiming_it_as_experience(self):
+        service, application, _ = _make_service()
+        PROFILE.desired_positions = ["Аналитик данных"]
+        service.ai_provider.adapted = ORIGINAL_RESUME
+        service.ai_provider.letter = (
+            "I am applying for the Data Analyst position. "
+            "My verified experience includes Python and SQL."
+        )
+
+        try:
+            result = await service.build_package(application.id)
+        finally:
+            PROFILE.desired_positions = ["Аналитик данных", "Data Analyst"]
+
+        assert result.status == "PREPARED"
+        assert result.package_data["validation"]["cover_letter"]["is_valid"] is True
 
 class TestDiffHelpers:
     """Tests for diff and coverage helpers."""

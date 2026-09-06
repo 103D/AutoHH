@@ -181,6 +181,14 @@ async def adapt_resume(
             original_resume=request.resume_text,
             adapted_resume=adapted_resume,
         )
+        if not validation.is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Generated resume contains unsupported claims",
+                    "issues": validation.issues,
+                },
+            )
 
         return {
             "job_id": str(request.job_id),
@@ -192,6 +200,8 @@ async def adapt_resume(
             },
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

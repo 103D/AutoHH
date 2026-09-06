@@ -122,6 +122,7 @@ async def _post_update(text: str, chat_id: int = 111, secret: str | None = None)
 def no_secret(monkeypatch):
     monkeypatch.setattr("app.core.config.settings.telegram_webhook_secret", None)
     monkeypatch.setattr("app.core.config.settings.telegram_chat_id", None)
+    monkeypatch.setattr("app.core.config.settings.telegram_extra_chat_ids", None)
 
 
 @pytest.mark.asyncio

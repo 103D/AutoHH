@@ -119,3 +119,86 @@ class ResumeRecommendationResponse(BaseModel):
     job_specializations: list[str] = Field(default_factory=list)
     scores: list[ResumeProfileScore] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
+
+
+# === Resume Analysis (task spec #3-9) ===
+
+
+class JobRequirementItem(BaseModel):
+    """A single job requirement for evidence analysis."""
+
+    skill: str = Field(..., description="Skill or technology name")
+    importance: str = Field(default="PREFERRED", pattern="^(REQUIRED|PREFERRED|OPTIONAL)$")
+
+
+class ResumeAnalysisRequest(BaseModel):
+    """Request for resume analysis."""
+
+    resume_text: str = Field(
+        ...,
+        min_length=50,
+        max_length=100_000,
+        description="Raw resume text to analyze",
+    )
+    job_requirements: list[JobRequirementItem] | None = Field(
+        default=None,
+        description="Optional job requirements for evidence mapping",
+    )
+
+
+class ATSIssueResponse(BaseModel):
+    """An ATS check issue."""
+
+    check: str
+    severity: str
+    detail: str
+    location: str | None = None
+
+
+class QualityDimensionResponse(BaseModel):
+    """Quality dimension score."""
+
+    dimension: str
+    score: int
+    issues: list[str] = Field(default_factory=list)
+    positives: list[str] = Field(default_factory=list)
+
+
+class BulletAnalysisResponse(BaseModel):
+    """Single bullet analysis."""
+
+    bullet: str
+    experience_index: int = Field(ge=0)
+    bullet_index: int = Field(ge=0)
+    strength: str
+    has_action: bool
+    has_result: bool
+    has_metric: bool
+    issues: list[str] = Field(default_factory=list)
+
+
+class EvidenceItemResponse(BaseModel):
+    """Evidence for a requirement."""
+
+    requirement: str
+    importance: str
+    strength: str
+    source: str | None = None
+    details: str | None = None
+
+
+class ResumeAnalysisResponse(BaseModel):
+    """Complete resume analysis result."""
+
+    overall_ats_score: int = Field(..., ge=0, le=100, description="ATS readability score 0-100")
+    overall_quality_score: int = Field(..., ge=0, le=100, description="Quality score 0-100")
+    ats_issues: list[ATSIssueResponse] = Field(default_factory=list)
+    ats_passed_checks: list[str] = Field(default_factory=list)
+    quality_issues: list[QualityDimensionResponse] = Field(default_factory=list)
+    bullet_analysis: list[BulletAnalysisResponse] = Field(default_factory=list)
+    bullet_analysis_total: int = Field(default=0, ge=0)
+    bullet_analysis_truncated: bool = False
+    evidence: list[EvidenceItemResponse] = Field(default_factory=list)
+    missing_required: list[str] = Field(default_factory=list, description="Required skills not in resume")
+    weak_evidenced: list[str] = Field(default_factory=list, description="Skills only in skills section")
+    recommendations: list[str] = Field(default_factory=list, description="Actionable recommendations")

@@ -123,20 +123,15 @@ class ApplicationPackageService:
     def _deterministic_adapt_resume(
         self, resume_text: str, job: Job, key_requirements: list[str]
     ) -> str:
-        """Append a 'Targeted Highlights' block when AI is unavailable.
+        """Return the source resume unchanged when AI adaptation is unavailable.
 
-        Keeps the original resume intact and adds a small block that surfaces
-        the key requirements for the job, so the diff/coverage metrics still
-        have something meaningful to show. Never fabricates experience.
+        Job requirements are not candidate facts. Appending them to a resume,
+        even under a generated heading, can misrepresent missing skills as
+        experience. The only safe deterministic fallback is the verified source
+        document itself.
         """
-        highlights = "".join(f"- {req}\n" for req in key_requirements)
-        block = (
-            "\n\n# Targeted Highlights (auto-generated)\n"
-            f"Position: {job.title} @ {job.company}\n"
-            "Relevant focus areas:\n"
-            f"{highlights}"
-        )
-        return resume_text.rstrip() + block
+        del job, key_requirements
+        return resume_text
 
     def _template_cover_letter(
         self,
@@ -244,15 +239,45 @@ class ApplicationPackageService:
             )
 
         # 3) Anti-hallucination validation
-        resume_validation = self.validator.validate_resume(resume_text, adapted_resume)
         profile_dict = {
             "skills": profile.skills,
             "technologies": profile.technologies,
             "experience_years": profile.experience_years,
             "desired_positions": profile.desired_positions,
             "education": profile.education,
+            "experience": getattr(profile, "experience", None),
+            "projects": getattr(profile, "projects", None),
+            "certifications": getattr(profile, "certifications", None),
         }
-        letter_validation = self.validator.validate_cover_letter(profile_dict, cover_letter)
+        resume_validation = self.validator.validate_resume(
+            resume_text,
+            adapted_resume,
+            candidate_profile=profile_dict,
+        )
+        letter_profile = {
+            **profile_dict,
+            "desired_positions": [
+                *(profile.desired_positions or []),
+                job.title,
+            ],
+        }
+        letter_validation = self.validator.validate_cover_letter(
+            letter_profile,
+            cover_letter,
+        )
+
+        validation_issues = [
+            *resume_validation.issues,
+            *letter_validation.issues,
+        ]
+        if validation_issues:
+            logger.warning(
+                f"Application package rejected for {application.id}: "
+                f"{len(validation_issues)} unsupported claims"
+            )
+            raise ValidationError(
+                "Generated application package contains unsupported claims"
+            )
 
         # 4) Diff + improvement metrics
         coverage_before = self._coverage(resume_text, job)

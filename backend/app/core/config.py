@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     # The primary chat is telegram_chat_id; extra chats (e.g. a private chat
     # alongside a group) go here so the inbound flow accepts both.
     telegram_extra_chat_ids: str | None = None
-    telegram_webhook_secret: str | None = None
 
     # Job Fetching
     job_fetch_interval_minutes: int = 30
