@@ -137,6 +137,29 @@ class Settings(BaseSettings):
     # suggestions stop being marked as provisional
     threshold_advisor_min_bucket: int = 5
 
+    # === Hermes + GPT-5.5 integration (Phase 4) ===
+    # Autonomy mode: READ_ONLY, ASSISTED, or AUTONOMOUS
+    hermes_mode: str = "READ_ONLY"
+    # GPT-5.5 reasoning provider config
+    hermes_gpt_api_key: str | None = None
+    hermes_gpt_model: str = "gpt-5.5-turbo"
+    hermes_gpt_base_url: str | None = None
+    hermes_gpt_max_tokens: int = 2048
+    hermes_gpt_temperature: float = 0.3
+    # Policy defaults for AUTONOMOUS mode (comma-separated for list values)
+    hermes_policy_min_score: int = 50
+    hermes_policy_min_salary_max: int | None = None
+    hermes_policy_max_salary_max: int | None = None
+    hermes_policy_locations: str = ""
+    hermes_policy_specializations: str = ""
+    hermes_policy_excluded_companies: str = ""
+    hermes_policy_employment_types: str = ""
+    hermes_policy_work_formats: str = ""
+    hermes_policy_max_experience_gap_years: float | None = None
+    hermes_policy_allow_top_tier: bool = False
+    # Score threshold above which policy-failing jobs get auto-approved with review
+    hermes_auto_approve_review_threshold: int = 70
+
     # Match category thresholds (matching v2)
     threshold_dream_job: int = 85
     threshold_stretch: int = 70
