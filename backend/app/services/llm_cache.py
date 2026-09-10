@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 from app.core import metrics
 from app.core.config import settings
+from app.services.match_provenance import candidate_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ RESULT_FIELDS = (
     "strong_matches",
     "concerns",
     "reasoning_summary",
+    "requirements",
+    "skill_equivalences",
+    "seniority_signal",
+    "domain_signal",
     "tokens_used",
     "cost_usd",
 )
@@ -74,12 +79,28 @@ class CachedAIProvider:
     @staticmethod
     def _profile_fingerprint(profile_dict: dict) -> str:
         """Stable fingerprint of the candidate profile part that affects matching."""
-        skills = sorted({str(s).strip().lower() for s in (profile_dict.get("skills") or []) if s})
-        techs = json.dumps(
-            profile_dict.get("technologies") or {}, sort_keys=True, default=str
-        ).lower()
-        level = str(profile_dict.get("experience_level") or "")
-        return hashlib.sha1("|".join((str(skills), techs, level)).encode()).hexdigest()
+        payload = json.dumps(
+            candidate_snapshot(profile_dict),
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    @staticmethod
+    def _json_safe(value):
+        """Convert Pydantic/domain values to a JSON-serializable structure."""
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json")
+        if isinstance(value, dict):
+            return {
+                str(key): CachedAIProvider._json_safe(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list | tuple):
+            return [CachedAIProvider._json_safe(item) for item in value]
+        return value
 
     def _cache_key(self, kwargs: dict) -> str:
         payload = json.dumps(
@@ -131,7 +152,10 @@ class CachedAIProvider:
 
         try:
             if redis is not None and key:
-                payload = {field: getattr(result, field, None) for field in RESULT_FIELDS}
+                payload = {
+                    field: self._json_safe(getattr(result, field, None))
+                    for field in RESULT_FIELDS
+                }
                 ttl_seconds = max(int(settings.llm_cache_ttl_hours), 1) * 3600
                 await redis.set(key, json.dumps(payload, ensure_ascii=False), ex=ttl_seconds)
         except Exception as e:

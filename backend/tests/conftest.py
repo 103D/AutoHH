@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +12,27 @@ os.environ["AI_API_KEY"] = "test_key"
 # Keep unit tests hermetic: no Redis dependency in the LLM cache path
 # (individual cache tests opt back in via monkeypatch on settings).
 os.environ["LLM_CACHE_ENABLED"] = "false"
+
+
+@pytest.fixture(scope="session")
+def migrate_test_database():
+    """Apply the real Alembic chain before integration tests run.
+
+    ``Base.metadata.create_all`` is not a migration engine: it cannot add new
+    columns to existing tables and previously allowed the test database to
+    drift away from production. A clean CI database upgrades from the base;
+    an inconsistent unstamped database fails explicitly instead of being
+    silently patched.
+    """
+    database_url = os.environ["DATABASE_URL"]
+    assert "test" in database_url.lower(), "Refusing to migrate a non-test database"
+    backend_root = Path(__file__).resolve().parents[1]
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=backend_root,
+        env=os.environ.copy(),
+        check=True,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +53,7 @@ async def reset_db_engine():
 
 # Database fixtures are optional, not autouse
 @pytest.fixture(scope="function")
-async def db_session():
+async def db_session(migrate_test_database):
     """Create a fresh database session for each test with transaction rollback.
     This fixture is only used by integration tests; unit tests should not depend on it.
     """
@@ -37,8 +61,6 @@ async def db_session():
     from sqlalchemy.orm import sessionmaker
 
     from app.core.config import settings
-    from app.models.base import Base
-
     # Create test engine
     test_engine = create_async_engine(
         str(settings.database_url),
@@ -47,10 +69,6 @@ async def db_session():
         pool_size=1,
         max_overflow=0,
     )
-
-    # Create tables if they don't exist
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
     # Create session factory
     async_session = sessionmaker(
@@ -70,9 +88,10 @@ async def cleanup_db(db_session):
     """Clean up database after test; only used by integration tests."""
     from sqlalchemy import text
 
-    yield
-
-    try:
+    async def truncate_all() -> None:
+        assert "test" in str(os.environ["DATABASE_URL"]).lower(), (
+            "Refusing to clean a non-test database"
+        )
         await db_session.execute(text("TRUNCATE TABLE candidate_profiles CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE resume_profiles CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE job_sources CASCADE;"))
@@ -81,7 +100,22 @@ async def cleanup_db(db_session):
         await db_session.execute(text("TRUNCATE TABLE notification_logs CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE applications CASCADE;"))
         await db_session.execute(text("TRUNCATE TABLE application_status_history CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE hh_accounts CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE hh_resumes CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE hh_negotiations CASCADE;"))
+        await db_session.execute(text("TRUNCATE TABLE hh_apply_attempts CASCADE;"))
         await db_session.commit()
+
+    try:
+        await truncate_all()
+    except Exception:
+        await db_session.rollback()
+        # ignore missing tables
+
+    yield
+
+    try:
+        await truncate_all()
     except Exception:
         await db_session.rollback()
         # ignore missing tables

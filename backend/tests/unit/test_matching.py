@@ -13,8 +13,10 @@ from app.providers.ai.base import SkillMatch
 from app.repositories.job import JobRepository
 from app.repositories.matching import MatchResultRepository
 from app.services.candidate import CandidateService
+from app.services.match_provenance import build_match_provenance
 from app.services.matching import MatchingService
 from app.services.scoring import ScoringEngine
+from app.services.specialization import classify_job
 from tests.unit.mocks.mock_ai_provider import MockAIProvider
 
 
@@ -97,7 +99,7 @@ async def test_match_hybrid_success(matching_service, mock_repo, mock_ai, sample
 
     matching_service.job_repository.get = AsyncMock(return_value=sample_job)
     matching_service.candidate_service.resolve_profile = AsyncMock(return_value=sample_profile)
-    matching_service.match_repository.create = AsyncMock(return_value=MagicMock(
+    matching_service.match_repository.create_revision = AsyncMock(return_value=MagicMock(
         job_id=sample_job.id,
         candidate_profile_id=sample_profile.id,
         score=90,
@@ -117,11 +119,14 @@ async def test_match_hybrid_success(matching_service, mock_repo, mock_ai, sample
 
     assert result.score > 0
     assert result.recommendation in MatchCategory.ALL
-    matching_service.match_repository.create.assert_called_once()
+    matching_service.match_repository.create_revision.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_match_cache_hit(matching_service, mock_repo, mock_ai, sample_job, sample_profile):
     from app.models.matching import MatchResult as DBMatchResult
+
+    sample_job.specializations = classify_job(sample_job.title, sample_job.description)
+    provenance = build_match_provenance(sample_profile, sample_job, settings)
     existing_match = DBMatchResult(
         id=uuid4(),
         job_id=sample_job.id,
@@ -133,7 +138,8 @@ async def test_match_cache_hit(matching_service, mock_repo, mock_ai, sample_job,
         strong_matches=[],
         concerns=[],
         reasoning_summary="Cached result",
-        analyzed_at=datetime(2026, 1, 1, tzinfo=UTC)
+        analyzed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        **provenance,
     )
     mock_repo.get_by_job_and_candidate.return_value = existing_match
 
@@ -143,7 +149,200 @@ async def test_match_cache_hit(matching_service, mock_repo, mock_ai, sample_job,
     result = await matching_service.analyze_job(sample_job.id, sample_profile.id)
 
     assert result.score == 85
+    assert result.analysis_fingerprint == provenance["analysis_fingerprint"]
+    assert result.is_stale is False
     mock_ai.analyze_job.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_legacy_match_without_fingerprint_is_recalculated(
+    matching_service, mock_repo, mock_ai, sample_job, sample_profile
+):
+    from app.models.matching import MatchResult as DBMatchResult
+
+    existing_match = DBMatchResult(
+        id=uuid4(),
+        job_id=sample_job.id,
+        candidate_profile_id=sample_profile.id,
+        score=85,
+        recommendation="DREAM_JOB",
+        matched_skills=[],
+        missing_skills=[],
+        strong_matches=[],
+        concerns=[],
+        reasoning_summary="Legacy result",
+        analyzed_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    mock_repo.get_by_job_and_candidate.return_value = existing_match
+    matching_service.job_repository.get = AsyncMock(return_value=sample_job)
+    matching_service.candidate_service.resolve_profile = AsyncMock(
+        return_value=sample_profile
+    )
+    matching_service.match_repository.create_revision = AsyncMock(
+        return_value=MagicMock(
+            job_id=sample_job.id,
+            candidate_profile_id=sample_profile.id,
+            score=85,
+            recommendation="DREAM_JOB",
+            user_override_recommendation=None,
+            matched_skills=[],
+            missing_skills=[],
+            strong_matches=[],
+            concerns=[],
+            reasoning_summary="Recalculated",
+            hard_failures=[],
+            score_breakdown={},
+            analyzed_at=datetime.now(UTC),
+            revision=2,
+        )
+    )
+
+    result = await matching_service.analyze_job(sample_job.id, sample_profile.id)
+
+    # Append-only: the legacy row is superseded by a NEW revision, never mutated.
+    matching_service.match_repository.create_revision.assert_awaited_once()
+    persisted = matching_service.match_repository.create_revision.call_args.args[0]
+    assert persisted["analysis_fingerprint"]
+    assert result.is_stale is False
+    assert result.revision == 2
+
+
+@pytest.mark.asyncio
+async def test_changed_profile_invalidates_existing_match(
+    matching_service, mock_repo, mock_ai, sample_job, sample_profile
+):
+    from app.models.matching import MatchResult as DBMatchResult
+
+    old_profile = CandidateProfile(
+        id=sample_profile.id,
+        user_id=sample_profile.user_id,
+        skills=["Python"],
+        technologies={},
+        languages={},
+        experience_years=1,
+        salary_currency="USD",
+        relocation_possible=False,
+        resume_versions={},
+    )
+    # analyze_job classifies specializations before hashing (ADR-002), so the
+    # test must compute fingerprints in the same job state the service sees.
+    sample_job.specializations = classify_job(sample_job.title, sample_job.description)
+    old_provenance = build_match_provenance(old_profile, sample_job, settings)
+    existing_match = DBMatchResult(
+        id=uuid4(),
+        job_id=sample_job.id,
+        candidate_profile_id=sample_profile.id,
+        score=40,
+        recommendation=MatchCategory.MARKET_RESEARCH,
+        matched_skills=[],
+        missing_skills=[],
+        strong_matches=[],
+        concerns=[],
+        reasoning_summary="Old profile result",
+        analyzed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        **old_provenance,
+    )
+    mock_repo.get_by_job_and_candidate.return_value = existing_match
+    matching_service.job_repository.get = AsyncMock(return_value=sample_job)
+    matching_service.candidate_service.resolve_profile = AsyncMock(
+        return_value=sample_profile
+    )
+    new_provenance = build_match_provenance(sample_profile, sample_job, settings)
+    matching_service.match_repository.create_revision = AsyncMock(
+        return_value=MagicMock(
+            job_id=sample_job.id,
+            candidate_profile_id=sample_profile.id,
+            score=85,
+            recommendation="DREAM_JOB",
+            user_override_recommendation=None,
+            matched_skills=[],
+            missing_skills=[],
+            strong_matches=[],
+            concerns=[],
+            reasoning_summary="Recalculated",
+            hard_failures=[],
+            score_breakdown={},
+            analyzed_at=datetime.now(UTC),
+            analysis_fingerprint=new_provenance["analysis_fingerprint"],
+            revision=2,
+        )
+    )
+
+    result = await matching_service.analyze_job(sample_job.id, sample_profile.id)
+
+    matching_service.match_repository.create_revision.assert_awaited_once()
+    persisted = matching_service.match_repository.create_revision.call_args.args[0]
+    assert persisted["analysis_fingerprint"] != old_provenance["analysis_fingerprint"]
+    assert result.analysis_fingerprint == persisted["analysis_fingerprint"]
+
+
+@pytest.mark.asyncio
+async def test_analyze_pending_recalculates_stale_match(
+    matching_service, mock_repo, sample_job, sample_profile
+):
+    from app.models.matching import MatchResult as DBMatchResult
+
+    sample_job.specializations = classify_job(sample_job.title, sample_job.description)
+    stale = DBMatchResult(
+        id=uuid4(),
+        job_id=sample_job.id,
+        candidate_profile_id=sample_profile.id,
+        score=40,
+        recommendation=MatchCategory.MARKET_RESEARCH,
+        matched_skills=[],
+        missing_skills=[],
+        strong_matches=[],
+        concerns=[],
+        reasoning_summary="stale",
+        analyzed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        analysis_fingerprint="0" * 64,
+    )
+    matching_service.candidate_service.resolve_profile = AsyncMock(
+        return_value=sample_profile
+    )
+    matching_service.job_repository.get_multi = AsyncMock(return_value=[sample_job])
+    mock_repo.get_by_job_and_candidate.return_value = stale
+    matching_service.analyze_job = AsyncMock(return_value=MagicMock())
+
+    results = await matching_service.analyze_pending_jobs(10, sample_profile.id)
+
+    matching_service.analyze_job.assert_awaited_once_with(sample_job.id, sample_profile.id)
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_match_result_marks_changed_inputs_stale(
+    matching_service, mock_repo, sample_job, sample_profile
+):
+    from app.models.matching import MatchResult as DBMatchResult
+
+    sample_job.specializations = classify_job(sample_job.title, sample_job.description)
+    old = DBMatchResult(
+        id=uuid4(),
+        job_id=sample_job.id,
+        candidate_profile_id=sample_profile.id,
+        score=40,
+        recommendation=MatchCategory.MARKET_RESEARCH,
+        matched_skills=[],
+        missing_skills=[],
+        strong_matches=[],
+        concerns=[],
+        reasoning_summary="old",
+        score_breakdown={},
+        hard_failures=[],
+        analyzed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        analysis_fingerprint="0" * 64,
+    )
+    mock_repo.get_by_job_and_candidate.return_value = old
+    matching_service.job_repository.get = AsyncMock(return_value=sample_job)
+    matching_service.candidate_service.resolve_profile = AsyncMock(
+        return_value=sample_profile
+    )
+
+    result = await matching_service.get_match_result(sample_job.id, sample_profile.id)
+
+    assert result is not None
+    assert result.is_stale is True
 
 @pytest.mark.asyncio
 async def test_match_ai_fallback(matching_service, mock_repo, mock_ai, sample_job, sample_profile):
@@ -152,7 +351,7 @@ async def test_match_ai_fallback(matching_service, mock_repo, mock_ai, sample_jo
 
     matching_service.job_repository.get = AsyncMock(return_value=sample_job)
     matching_service.candidate_service.resolve_profile = AsyncMock(return_value=sample_profile)
-    matching_service.match_repository.create = AsyncMock(return_value=MagicMock(
+    matching_service.match_repository.create_revision = AsyncMock(return_value=MagicMock(
         job_id=sample_job.id,
         candidate_profile_id=sample_profile.id,
         score=50,
@@ -194,10 +393,10 @@ async def test_match_hard_failure_not_eligible(matching_service, mock_repo, mock
     mock_repo.get_by_job_and_candidate.return_value = None
     matching_service.job_repository.get = AsyncMock(return_value=ineligible_job)
     matching_service.candidate_service.resolve_profile = AsyncMock(return_value=sample_profile)
-    matching_service.match_repository.create = AsyncMock(return_value=MagicMock(
+    matching_service.match_repository.create_revision = AsyncMock(return_value=MagicMock(
         job_id=ineligible_job.id,
         candidate_profile_id=sample_profile.id,
-        score=20,
+        score=0,
         recommendation=MatchCategory.NOT_ELIGIBLE,
         user_override_recommendation=None,
         hard_failures=["experience: vacancy requires 10+ years, candidate has 5"],
@@ -207,16 +406,19 @@ async def test_match_hard_failure_not_eligible(matching_service, mock_repo, mock
         concerns=[],
         reasoning_summary="",
         score_breakdown={},
-        analyzed_at=datetime.now(UTC)
+        analyzed_at=datetime.now(UTC),
+        analysis_fingerprint="f" * 64,
+        revision=1,
     ))
 
     result = await matching_service.analyze_job(ineligible_job.id, sample_profile.id)
 
     assert result.recommendation == MatchCategory.NOT_ELIGIBLE
     mock_ai.analyze_job.assert_not_called()
-    persisted = matching_service.match_repository.create.call_args[0][0]
+    persisted = matching_service.match_repository.create_revision.call_args.args[0]
     assert persisted["hard_failures"]
     assert persisted["recommendation"] == MatchCategory.NOT_ELIGIBLE
+    assert persisted["score"] == 0
 
 
 @pytest.mark.asyncio
@@ -229,7 +431,7 @@ async def test_match_llm_gate_skips_ai_for_low_scores(
     mock_repo.get_by_job_and_candidate.return_value = None
     matching_service.job_repository.get = AsyncMock(return_value=sample_job)
     matching_service.candidate_service.resolve_profile = AsyncMock(return_value=sample_profile)
-    matching_service.match_repository.create = AsyncMock(return_value=MagicMock(
+    matching_service.match_repository.create_revision = AsyncMock(return_value=MagicMock(
         job_id=sample_job.id,
         candidate_profile_id=sample_profile.id,
         score=30,

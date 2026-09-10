@@ -5,6 +5,8 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 
+pytestmark = pytest.mark.usefixtures("migrate_test_database")
+
 
 @pytest.mark.asyncio
 async def test_create_profile():

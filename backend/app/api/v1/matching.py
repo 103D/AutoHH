@@ -61,6 +61,24 @@ async def analyze_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
 
 
+@router.get("/jobs/{job_id}/match/history", response_model=list[MatchResultResponse])
+async def get_match_history(
+    job_id: UUID,
+    candidate_profile_id: UUID | None = None,
+    service: Annotated[MatchingService, Depends(get_matching_service)] = None,
+):
+    """
+    Revision history of match results for a job (append-only provenance).
+
+    Every recalculation creates a new revision; previous revisions remain
+    queryable for score archaeology (ADR-002). Ordered by revision ascending.
+    """
+    try:
+        return await service.get_match_history(job_id, candidate_profile_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from None
+
+
 @router.post("/jobs/{job_id}/recommend-resume", response_model=ResumeRecommendationResponse)
 async def recommend_resume(
     job_id: UUID,

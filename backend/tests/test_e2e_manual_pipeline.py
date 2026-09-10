@@ -17,6 +17,8 @@ from app.main import app
 from app.providers.ai.base import MatchResult as AIMatchResult
 from app.providers.ai.base import SkillMatch
 
+pytestmark = pytest.mark.usefixtures("migrate_test_database")
+
 
 def make_profile_payload() -> dict:
     """Fresh payload per test (unique user_id; no cross-run state)."""
@@ -250,6 +252,76 @@ async def test_e2e_matching_analyze_endpoint(cleanup_db, mock_ai):
         assert r.json()["score"] == match["score"]
 
 
+@pytest.mark.asyncio
+async def test_e2e_match_provenance_cache_and_stale(cleanup_db, mock_ai):
+    """Input fingerprints make matching reproducible and stale results visible.
+
+    Real HTTP + real test DB behavior:
+    - a repeated analyze with unchanged inputs reuses the same analysis
+      fingerprint (no second LLM call);
+    - changing a matching-relevant candidate field marks the stored result
+      stale through GET /match;
+    - a new analyze produces a different fingerprint and clears the flag.
+    """
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        r = await client.post("/api/v1/profile/", json=make_profile_payload())
+        profile_id = r.json()["id"]
+        r = await client.post("/api/v1/jobs/manual", json=MANUAL_PAYLOAD)
+        job_id = r.json()["job"]["id"]
+
+        # 1. First analysis persists provenance.
+        r = await client.post(
+            "/api/v1/matching/analyze",
+            params={"job_id": job_id, "candidate_profile_id": profile_id},
+        )
+        assert r.status_code == 200, r.text
+        first = r.json()
+        first_fingerprint = first["analysis_fingerprint"]
+        assert first_fingerprint
+        assert first["candidate_fingerprint"]
+        assert first["job_fingerprint"]
+        assert first["scoring_fingerprint"]
+        assert first["revision"] >= 1
+        assert first["is_stale"] is False
+
+        # 2. Repeated analyze with identical inputs reuses the stored result.
+        r = await client.post(
+            "/api/v1/matching/analyze",
+            params={"job_id": job_id, "candidate_profile_id": profile_id},
+        )
+        assert r.status_code == 200, r.text
+        second = r.json()
+        assert second["analysis_fingerprint"] == first_fingerprint
+        assert second["is_stale"] is False
+        assert mock_ai.analyze_job.await_count == 1  # no second LLM call
+
+        # 3. A matching-relevant field change makes the stored result stale.
+        r = await client.put(
+            f"/api/v1/profile/{profile_id}",
+            json={"desired_salary_min": 900000},
+        )
+        assert r.status_code == 200
+
+        r = await client.get(
+            f"/api/v1/matching/jobs/{job_id}/match",
+            params={"candidate_profile_id": profile_id},
+        )
+        assert r.status_code == 200
+        stale = r.json()
+        assert stale["is_stale"] is True
+        assert stale["analysis_fingerprint"] == first_fingerprint
+
+        # 4. Re-analysis produces a new fingerprint and clears staleness.
+        r = await client.post(
+            "/api/v1/matching/analyze",
+            params={"job_id": job_id, "candidate_profile_id": profile_id},
+        )
+        assert r.status_code == 200, r.text
+        refreshed = r.json()
+        assert refreshed["is_stale"] is False
+        assert refreshed["analysis_fingerprint"] != first_fingerprint
 @pytest.mark.asyncio
 async def test_e2e_matching_soft_match_endpoint(cleanup_db, mock_ai):
     """POST /matching/match is a lightweight deterministic match (no persistence)."""

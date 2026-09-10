@@ -21,6 +21,11 @@ Dockerized система автоматического поиска работ
 | **Zarplata** | ❌ Scraper устарел | Отключён по умолчанию |
 | **SuperJob** | 🔑 Требует API key | Отключён по умолчанию |
 
+В ingestion factory зарегистрировано **7 типов источников**: `hh_kz`,
+`hh_remote`, `remote_ok`, `manual`, `habr_career`, `zarplata`, `superjob`.
+`hh_kz` и `hh_remote` отвечают только за сбор публичных вакансий. Они не
+представляют аккаунт соискателя и не выполняют действия от его имени.
+
 ## Стек
 
 | Слой | Технология |
@@ -192,10 +197,18 @@ AtoHH/
 
 ### AI-матчинг (опционально)
 
-Когда включён AI-провайдер:
+LLM не назначает итоговый numeric score. Актуальный pipeline:
+
+```text
+Hard filters
+→ deterministic component scoring
+→ optional LLM requirement/equivalence extraction
+→ deterministic re-score по извлечённой семантике
+→ recommendation и explainable gaps
 ```
-final_score = deterministic × 0.6 + ai_score × 0.4
-```
+
+Финальная арифметика, веса, caps и thresholds всегда выполняются Python-кодом.
+Поле `score` в legacy AI response не участвует в расчёте результата.
 
 AI вызывается только если:
 - Hard filters пройдены
@@ -246,10 +259,39 @@ AI вызывается только если:
 
 ## Deployment
 
-1. Указать `SECRET_KEY` в `backend/.env` (обязательно в production)
-2. `docker compose up -d --build`
-3. Проверить health: `curl http://localhost:8000/health`
-4. Инициализировать источники: `docker exec jobhunter-backend python scripts/init_job_sources.py`
+Основной `docker-compose.yml` предназначен для **локальной разработки**: он
+публикует PostgreSQL/Redis и монтирует `./backend:/app` для быстрого цикла
+разработки. Не используйте его как production-конфигурацию на публичном VPS.
+
+Для production используйте отдельный compose-файл:
+
+```bash
+cp .env.production.example .env.production
+# заполнить все значения без placeholder-ов
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+```
+
+Production Compose:
+
+- не публикует PostgreSQL и Redis наружу;
+- не монтирует исходный код в контейнеры;
+- не содержит hardcoded паролей;
+- требует явные `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `DATABASE_URL`,
+  `REDIS_URL` и `SECRET_KEY`;
+- публикует только frontend HTTP-порт, который следует размещать за внешним
+  TLS reverse proxy.
+
+После запуска:
+
+```bash
+curl http://localhost/health
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec backend python scripts/init_job_sources.py
+```
+
+Архитектурные решения по HH account integration и versioned matching описаны в
+`backend/docs/adr/001-hh-account-integration.md` и
+`backend/docs/adr/002-versioned-matching.md`.
 
 ## License
 

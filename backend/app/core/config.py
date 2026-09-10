@@ -54,6 +54,30 @@ class Settings(BaseSettings):
     # Format: "AppName/Version (contact@yourdomain.com)"
     hh_user_agent: str = "JobHunter/0.1.0 (contact@yourdomain.com)"
 
+    # HeadHunter OAuth (ADR-001): applicant-account integration.
+    # Register at https://dev.hh.ru/, redirect URI must match the app settings.
+    hh_oauth_client_id: str | None = None
+    hh_oauth_client_secret: str | None = None
+    hh_oauth_redirect_uri: str | None = None
+    # PKCE S256 — enable only for HH apps registered with PKCE support.
+    hh_oauth_use_pkce: bool = False
+    # OAuth state TTL (connect flow must finish within this window).
+    hh_oauth_state_ttl_seconds: int = 600
+    # Dedicated Fernet key for encrypting HH tokens at rest.
+    # MUST be distinct from SECRET_KEY. Generate:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    hh_credentials_key: str | None = None
+    # Background HH sync cadence/limits (ADR-001 milestone 6).
+    hh_sync_interval_minutes: int = 15
+    hh_sync_batch_size: int = 100
+    hh_refresh_lock_ttl_seconds: int = 60
+
+    # Interim ownership boundary (ADR-001 milestone 1): HH endpoints scope
+    # everything by this user id until real authentication exists. This is
+    # the documented production-rollout gate — do not expose beyond localhost
+    # without replacing it with a real auth dependency.
+    default_user_id: str = "00000000-0000-0000-0000-000000000001"
+
     # Scoring Weights — deterministic components (normalized to 1.0 in ScoringEngine)
     score_weight_semantic: float = 0.4  # deprecated: LLM no longer blends into the
                                         # final score; kept for env back-compat only

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     analytics,
     applications,
+    hh,
     jobs,
     matching,
     profile,
@@ -22,3 +23,4 @@ api_router.include_router(resumes.router)
 api_router.include_router(resume_analysis.router)
 api_router.include_router(telegram.router)
 api_router.include_router(analytics.router)
+api_router.include_router(hh.router)

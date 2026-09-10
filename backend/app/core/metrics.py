@@ -28,6 +28,21 @@ JOB_INGESTED_TOTAL = Counter(
     "Jobs ingested by outcome (new/duplicate/error)",
     ["source", "outcome"],
 )
+HH_SYNC_TOTAL = Counter(
+    "autohh_hh_sync_total",
+    "HH account sync attempts by operation and status",
+    ["operation", "status"],
+)
+HH_SYNC_ITEMS_TOTAL = Counter(
+    "autohh_hh_sync_items_total",
+    "HH synced items by entity and outcome",
+    ["entity", "outcome"],
+)
+HH_TOKEN_REFRESH_TOTAL = Counter(
+    "autohh_hh_token_refresh_total",
+    "HH token refresh attempts by status",
+    ["status"],
+)
 
 # --- Matching / LLM pipeline ---
 MATCH_ANALYSIS_DURATION = Histogram(
@@ -124,5 +139,39 @@ def inc_job_ingested(source: str, outcome: str, amount: int = 1) -> None:
         return
     try:
         JOB_INGESTED_TOTAL.labels(source=source or "unknown", outcome=outcome).inc(amount)
+    except Exception:
+        pass
+
+
+def inc_hh_sync(operation: str, status: str) -> None:
+    """Count one HH sync operation outcome."""
+    if not metrics_enabled():
+        return
+    try:
+        HH_SYNC_TOTAL.labels(
+            operation=operation or "unknown", status=status or "unknown"
+        ).inc()
+    except Exception:
+        pass
+
+
+def inc_hh_sync_items(entity: str, outcome: str, amount: int = 1) -> None:
+    """Count HH sync item outcomes (fetched/upserted/skipped)."""
+    if not metrics_enabled() or amount <= 0:
+        return
+    try:
+        HH_SYNC_ITEMS_TOTAL.labels(
+            entity=entity or "unknown", outcome=outcome or "unknown"
+        ).inc(amount)
+    except Exception:
+        pass
+
+
+def inc_hh_token_refresh(status: str) -> None:
+    """Count token refresh outcomes (success/error/reauth_required/lock_timeout)."""
+    if not metrics_enabled():
+        return
+    try:
+        HH_TOKEN_REFRESH_TOTAL.labels(status=status or "unknown").inc()
     except Exception:
         pass

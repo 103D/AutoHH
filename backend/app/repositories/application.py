@@ -28,6 +28,20 @@ class ApplicationRepository(BaseRepository[Application]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_job_and_user(self, job_id: UUID, user_id: UUID) -> Application | None:
+        """Find an application for a job owned by a specific local user."""
+        from app.models.candidate import CandidateProfile
+
+        result = await self.session.execute(
+            select(self.model)
+            .join(
+                CandidateProfile,
+                CandidateProfile.id == self.model.candidate_profile_id,
+            )
+            .where(self.model.job_id == job_id, CandidateProfile.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_status(
         self, status: str, limit: int = 50
     ) -> list[Application]:

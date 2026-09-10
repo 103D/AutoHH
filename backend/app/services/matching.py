@@ -39,6 +39,7 @@ from app.services.candidate import CandidateService
 from app.services.gap_analysis import build_gap_items
 from app.services.hard_filters import HardFilterEngine
 from app.services.llm_cache import CachedAIProvider
+from app.services.match_provenance import build_match_provenance
 from app.services.resume_keyword_match import keyword_coverage
 from app.services.resume_selection import ResumeSelector
 from app.services.scoring import ScoringEngine
@@ -178,13 +179,6 @@ class MatchingService:
 
         profile = await self.candidate_service.resolve_profile(candidate_profile_id)
 
-        existing = await self.match_repository.get_by_job_and_candidate(job_id, profile.id)
-        if existing:
-            logger.info(f"Job {job_id} already analyzed for profile {profile.id}, returning cached")
-            return self._to_response(existing)
-
-        final_score, breakdown = self.scoring.calculate(profile, job)
-
         # Multi-label specialization (task spec #11): classify once at
         # analysis time (also covers legacy rows created before this field
         # existed), persist, and reuse downstream (resume selection, UI).
@@ -195,6 +189,24 @@ class MatchingService:
             except Exception as e:  # classification is an optimization, never fatal
                 logger.warning(f"Failed to persist specializations for job {job_id}: {e}")
             job.specializations = specs
+
+        provenance = build_match_provenance(profile, job, settings)
+        existing = await self.match_repository.get_by_job_and_candidate(job_id, profile.id)
+        if existing and getattr(existing, "analysis_fingerprint", None) == provenance[
+            "analysis_fingerprint"
+        ]:
+            logger.info(
+                f"Job {job_id} already analyzed for profile {profile.id} "
+                "with current inputs, returning cached"
+            )
+            return self._to_response(existing, is_stale=False)
+
+        if existing:
+            logger.info(
+                f"Job {job_id} analysis for profile {profile.id} is stale; recalculating"
+            )
+
+        final_score, breakdown = self.scoring.calculate(profile, job)
 
         job_requirements = {
             "location": job.location,
@@ -331,11 +343,12 @@ class MatchingService:
             "ai_tokens_used": ai_tokens,
             "ai_cost_usd": ai_cost,
             "analyzed_at": now,
+            **provenance,
         }
 
-        match_result = await self.match_repository.create(match_data)
+        match_result = await self.match_repository.create_revision(match_data)
 
-        return self._to_response(match_result)
+        return self._to_response(match_result, is_stale=False)
 
     async def analyze_pending_jobs(
         self,
@@ -348,7 +361,12 @@ class MatchingService:
         results = []
         for job in jobs:
             existing = await self.match_repository.get_by_job_and_candidate(job.id, profile.id)
-            if existing:
+            if getattr(job, "specializations", None) is None:
+                job.specializations = classify_job(job.title, job.description)
+            provenance = build_match_provenance(profile, job, settings)
+            if existing and getattr(existing, "analysis_fingerprint", None) == provenance[
+                "analysis_fingerprint"
+            ]:
                 continue
             try:
                 result = await self.analyze_job(job.id, profile.id)
@@ -366,14 +384,61 @@ class MatchingService:
         match = await self.match_repository.get_by_job_and_candidate(job_id, candidate_profile_id)
         if not match:
             return None
-        return self._to_response(match)
+        job = await self.job_repository.get(job_id)
+        if job is None:
+            return self._to_response(match, is_stale=True)
+        profile = await self.candidate_service.resolve_profile(candidate_profile_id)
+        if getattr(job, "specializations", None) is None:
+            job.specializations = classify_job(job.title, job.description)
+        current = build_match_provenance(profile, job, settings)
+        is_stale = getattr(match, "analysis_fingerprint", None) != current[
+            "analysis_fingerprint"
+        ]
+        return self._to_response(match, is_stale=is_stale)
+
+    async def get_match_history(
+        self,
+        job_id: UUID,
+        candidate_profile_id: UUID | None = None,
+    ) -> list[MatchResultResponse]:
+        """
+        Full revision history of match results for a job (ADR-002).
+
+        Rows are ordered by revision ascending. ``is_current`` marks the
+        latest revision; ``is_stale`` marks rows whose analysis fingerprint
+        no longer matches the current candidate/job/scoring inputs.
+        """
+        job = await self.job_repository.get(job_id)
+        if not job:
+            raise NotFoundError(f"Job {job_id} not found")
+        profile = await self.candidate_service.resolve_profile(candidate_profile_id)
+        rows = await self.match_repository.get_revision_history(job_id, profile.id)
+        if not rows:
+            raise NotFoundError(
+                f"No match history for job {job_id}. Analyze the job first."
+            )
+        if getattr(job, "specializations", None) is None:
+            job.specializations = classify_job(job.title, job.description)
+        current = build_match_provenance(profile, job, settings)["analysis_fingerprint"]
+        return [
+            self._to_response(
+                row,
+                is_stale=getattr(row, "analysis_fingerprint", None) != current,
+            )
+            for row in rows
+        ]
 
     @staticmethod
     def effective_recommendation(match: MatchResult) -> str:
         """User override wins over the computed category."""
         return match.user_override_recommendation or match.recommendation
 
-    def _to_response(self, match: MatchResult) -> MatchResultResponse:
+    def _to_response(
+        self,
+        match: MatchResult,
+        *,
+        is_stale: bool = False,
+    ) -> MatchResultResponse:
         """Convert a MatchResult model into a response schema."""
         breakdown = match.score_breakdown or {}
         return MatchResultResponse(
@@ -393,7 +458,28 @@ class MatchingService:
             score_breakdown=dict(breakdown),
             stretch_analysis=breakdown.get("stretch"),
             analyzed_at=match.analyzed_at,
+            candidate_fingerprint=self._optional_str(match, "candidate_fingerprint"),
+            job_fingerprint=self._optional_str(match, "job_fingerprint"),
+            scoring_fingerprint=self._optional_str(match, "scoring_fingerprint"),
+            taxonomy_fingerprint=self._optional_str(match, "taxonomy_fingerprint"),
+            analysis_fingerprint=self._optional_str(match, "analysis_fingerprint"),
+            taxonomy_version=self._optional_str(match, "taxonomy_version"),
+            engine_version=self._optional_str(match, "engine_version"),
+            prompt_version=self._optional_str(match, "prompt_version"),
+            revision=self._revision(match),
+            is_current=bool(getattr(match, "is_current", True)),
+            is_stale=is_stale,
         )
+
+    @staticmethod
+    def _optional_str(match: MatchResult, field: str) -> str | None:
+        value = getattr(match, field, None)
+        return value if isinstance(value, str) else None
+
+    @staticmethod
+    def _revision(match: MatchResult | None) -> int:
+        value = getattr(match, "revision", 1) if match is not None else 1
+        return value if isinstance(value, int) and value >= 1 else 1
 
     async def set_recommendation_override(
         self,

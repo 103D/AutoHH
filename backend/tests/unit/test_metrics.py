@@ -56,6 +56,25 @@ def test_ingestion_counters(monkeypatch):
     ) >= 3
 
 
+def test_hh_m6_counters(monkeypatch):
+    monkeypatch.setattr(settings, "metrics_enabled", True)
+
+    sync_labels = {"operation": "sync_all", "status": "success"}
+    item_labels = {"entity": "resumes", "outcome": "upserted"}
+    refresh_labels = {"status": "success"}
+    before_sync = metrics._sample_value("autohh_hh_sync_total", sync_labels) or 0
+    before_items = metrics._sample_value("autohh_hh_sync_items_total", item_labels) or 0
+    before_refresh = metrics._sample_value("autohh_hh_token_refresh_total", refresh_labels) or 0
+
+    metrics.inc_hh_sync("sync_all", "success")
+    metrics.inc_hh_sync_items("resumes", "upserted", amount=2)
+    metrics.inc_hh_token_refresh("success")
+
+    assert metrics._sample_value("autohh_hh_sync_total", sync_labels) == before_sync + 1
+    assert metrics._sample_value("autohh_hh_sync_items_total", item_labels) == before_items + 2
+    assert metrics._sample_value("autohh_hh_token_refresh_total", refresh_labels) == before_refresh + 1
+
+
 def test_zero_amount_ingestion_is_noop(monkeypatch):
     monkeypatch.setattr(settings, "metrics_enabled", True)
     labels = {"source": "nosrc", "outcome": "new"}

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import settings
+from app.providers.ai.base import JobRequirement, SkillEquivalence
 from app.services.llm_cache import CachedAIProvider
 
 
@@ -30,6 +31,18 @@ def _provider_result(score=83):
         strong_matches=["SQL"],
         concerns=[],
         reasoning_summary="ok",
+        requirements=[
+            JobRequirement(skill="SQL", importance="REQUIRED", note="must have")
+        ],
+        skill_equivalences=[
+            SkillEquivalence(
+                job_skill="Airflow",
+                candidate_skill="dbt",
+                note="transferable orchestration experience",
+            )
+        ],
+        seniority_signal="middle",
+        domain_signal="retail",
         tokens_used=100,
         cost_usd=0.01,
     )
@@ -149,6 +162,18 @@ async def test_cache_key_depends_on_profile_skills(enable_cache):
     assert cached._cache_key(kw2) != base
 
 
+async def test_cache_key_depends_on_matching_relevant_profile_fields(enable_cache):
+    cached = CachedAIProvider(_make_provider([]), redis_client=FakeRedis())
+    base_kwargs = _kwargs()
+    base_kwargs["candidate_profile"]["desired_salary_min"] = 400_000
+    base = cached._cache_key(base_kwargs)
+
+    changed = _kwargs()
+    changed["candidate_profile"]["desired_salary_min"] = 500_000
+
+    assert cached._cache_key(changed) != base
+
+
 async def test_cache_key_changes_with_prompt_version(enable_cache, monkeypatch):
     cached = CachedAIProvider(_make_provider([]), redis_client=FakeRedis())
     kw = _kwargs()
@@ -172,3 +197,18 @@ async def test_cached_payload_roundtrip_keeps_result_fields(enable_cache):
     raw = json.loads(next(iter(store.values())))
     assert set(raw) == set(RESULT_FIELDS)
     assert raw["score"] == _provider_result().score
+
+    second = CachedAIProvider(_make_provider(calls), redis_client=FakeRedis(store))
+    restored = await second.analyze_job(**_kwargs())
+    assert restored.requirements == [
+        {"skill": "SQL", "importance": "REQUIRED", "note": "must have"}
+    ]
+    assert restored.skill_equivalences == [
+        {
+            "job_skill": "Airflow",
+            "candidate_skill": "dbt",
+            "note": "transferable orchestration experience",
+        }
+    ]
+    assert restored.seniority_signal == "middle"
+    assert restored.domain_signal == "retail"

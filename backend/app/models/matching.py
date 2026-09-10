@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy import ARRAY, JSON, ForeignKey, Index, Integer, Text
+from sqlalchemy import ARRAY, JSON, Boolean, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -45,7 +46,15 @@ class MatchResult(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "match_results"
     __table_args__ = (
-        Index("ix_match_results_job_candidate", "job_id", "candidate_profile_id", unique=True),
+        # Append-only revisioning (ADR-002): exactly one current revision per
+        # (job, candidate) pair; older revisions stay immutable for history.
+        Index(
+            "ix_match_results_current_job_candidate",
+            "job_id",
+            "candidate_profile_id",
+            unique=True,
+            postgresql_where=sa_text("is_current"),
+        ),
         Index("ix_match_results_score", "score"),
         Index("ix_match_results_recommendation", "recommendation"),
     )
@@ -86,5 +95,30 @@ class MatchResult(Base, UUIDMixin, TimestampMixin):
     ai_model: Mapped[str | None] = mapped_column(nullable=True)
     ai_tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ai_cost_usd: Mapped[float | None] = mapped_column(nullable=True)
+
+    # Reproducibility provenance (versioned matching, additive milestone).
+    # Legacy rows remain nullable and are treated as stale by MatchingService.
+    candidate_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    job_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    scoring_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    taxonomy_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    analysis_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    taxonomy_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    engine_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    revision: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    is_current: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=sa_text("true"),
+    )
 
     analyzed_at: Mapped[str] = mapped_column(Text, nullable=False)  # ISO format timestamp

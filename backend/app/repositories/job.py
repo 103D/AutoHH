@@ -34,6 +34,32 @@ class JobRepository(BaseRepository[Job]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_hh_vacancy_id(self, remote_vacancy_id: str) -> Job | None:
+        """Resolve an HH remote vacancy only against HH-ingested local jobs.
+
+        ``external_id`` by itself is not globally unique: manual and other
+        providers may legitimately use the same value. The source-type guard
+        prevents a remote applicant negotiation from being linked to an
+        unrelated local vacancy.
+        """
+        hh_source_ids = select(JobSource.id).where(
+            JobSource.type.in_(("hh_kz", "hh_remote"))
+        )
+        result = await self.session.execute(
+            select(self.model)
+            .where(
+                self.model.external_id == remote_vacancy_id,
+                or_(
+                    self.model.source_type.in_(("hh_kz", "hh_remote")),
+                    self.model.source_id.in_(hh_source_ids),
+                ),
+            )
+            .limit(2)
+        )
+        matches = list(result.scalars().all())
+        # Cross-source duplicate IDs are ambiguous: never guess a local Job.
+        return matches[0] if len(matches) == 1 else None
+
     async def get_by_content_hash(self, content_hash: str) -> Job | None:
         result = await self.session.execute(
             select(self.model).where(self.model.content_hash == content_hash)

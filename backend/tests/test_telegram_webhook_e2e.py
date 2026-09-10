@@ -15,6 +15,8 @@ from app.services import telegram_inbound as ti_module
 from app.services.telegram_inbound import HELP_TEXT
 from app.services.telegram_v2 import TelegramDigestAdapter
 
+pytestmark = pytest.mark.usefixtures("migrate_test_database")
+
 JSONLD_HTML = """<html><head>
 <script type="application/ld+json">
 {"@type": "JobPosting",

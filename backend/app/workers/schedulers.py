@@ -18,4 +18,9 @@ celery_app.conf.beat_schedule = {
         "schedule": 300.0,  # Every 5 minutes
         "options": {"expires": 120},
     },
+    "hh-sync-periodic": {
+        "task": "sync_all_hh_accounts",
+        "schedule": settings.hh_sync_interval_minutes * 60.0,
+        "options": {"expires": 300},
+    },
 }

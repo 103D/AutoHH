@@ -48,6 +48,17 @@ export interface MatchResult {
   score_breakdown?: ScoreBreakdown
   stretch_analysis?: StretchAnalysis | null
   analyzed_at: string
+  candidate_fingerprint?: string | null
+  job_fingerprint?: string | null
+  scoring_fingerprint?: string | null
+  taxonomy_fingerprint?: string | null
+  analysis_fingerprint?: string | null
+  taxonomy_version?: string | null
+  engine_version?: string | null
+  prompt_version?: string | null
+  revision?: number
+  is_current?: boolean
+  is_stale?: boolean
 }
 
 // === Career intelligence v2 ===

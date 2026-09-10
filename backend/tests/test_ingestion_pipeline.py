@@ -22,7 +22,6 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
-from app.models.base import Base
 from app.providers.jobs.exceptions import RateLimitError, TransientFetchError
 from app.repositories.job import JobRepository, JobSourceRepository
 from app.schemas.job import RawJob
@@ -66,8 +65,8 @@ def http_status_error(status: int) -> httpx.HTTPStatusError:
 
 
 @pytest.fixture
-async def session_factory():
-    """Fresh engine + sessionmaker per test; tables ensured, rows cleaned up."""
+async def session_factory(migrate_test_database):
+    """Fresh engine + sessionmaker per test; migrations applied, rows cleaned."""
     # Fail fast: the teardown below TRUNCATEs job_sources, so this suite must
     # never point at a production database.
     assert "test" in str(settings.database_url), (
@@ -75,9 +74,6 @@ async def session_factory():
         f"{settings.database_url}"
     )
     engine = create_async_engine(str(settings.database_url), pool_pre_ping=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory
 

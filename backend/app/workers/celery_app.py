@@ -10,6 +10,7 @@ celery_app = Celery(
         "app.workers.tasks.fetch_jobs",
         "app.workers.tasks.analyze_jobs",
         "app.workers.tasks.notifications",
+        "app.workers.tasks.hh_sync",
     ],
 )
 

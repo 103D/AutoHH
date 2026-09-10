@@ -104,6 +104,20 @@ class MatchResultResponse(MatchResultBase):
     job_id: UUID
     candidate_profile_id: UUID
     analyzed_at: datetime
+    candidate_fingerprint: str | None = None
+    job_fingerprint: str | None = None
+    scoring_fingerprint: str | None = None
+    taxonomy_fingerprint: str | None = None
+    analysis_fingerprint: str | None = None
+    taxonomy_version: str | None = None
+    engine_version: str | None = None
+    prompt_version: str | None = None
+    revision: int = Field(default=1, ge=1)
+    is_current: bool = Field(
+        default=True,
+        description="False for superseded (historical) revisions",
+    )
+    is_stale: bool = False
 
     model_config = {"from_attributes": True}
 
