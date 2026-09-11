@@ -10,10 +10,10 @@ Determines what actions Hermes is allowed to take on the candidate's behalf:
   specialization, experience gap, etc.).
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class AutonomyMode(str, Enum):
+class AutonomyMode(StrEnum):
     """Autonomy level controlling Hermes action permissions."""
 
     READ_ONLY = "READ_ONLY"

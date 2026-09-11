@@ -1,13 +1,14 @@
 """Tests for HermesMcpTools gate enforcement."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
+
+from app.hermes.approval_gate import ActionGate
 from app.hermes.mcp_tools import HermesMcpTools, McpToolError, ToolResult
 from app.hermes.modes import AutonomyMode
 from app.hermes.policy import UserPolicy
-from app.hermes.approval_gate import ActionGate
 
 
 class _FakeProfile:
@@ -134,7 +135,7 @@ class TestMcpToolsAutonomousWithPolicy:
         ctx.match_repository.get_by_job_and_candidate = AsyncMock(
             return_value=_FakeMatch(score=50)
         )
-        tools = HermesMcpTools(ctx)
+        HermesMcpTools(ctx)
 
         job = _FakeJob()
         match = _FakeMatch(score=50)

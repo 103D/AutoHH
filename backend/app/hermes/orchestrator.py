@@ -29,11 +29,13 @@ logger = get_logger(__name__)
 
 class OrchestratorError(Exception):
     """Base exception for orchestrator errors."""
+
     pass
 
 
 class NoProfileError(OrchestratorError):
     """Raised when no candidate profile can be resolved."""
+
     pass
 
 
@@ -115,22 +117,14 @@ class HermesOrchestrator:
         """Fetch a job by ID, returning None if not found."""
         return await self._ctx.job_repository.get(job_id)
 
-    async def _resolve_profile(
-        self, candidate_profile_id: UUID | None = None
-    ) -> Any:
+    async def _resolve_profile(self, candidate_profile_id: UUID | None = None) -> Any:
         """Resolve the candidate profile, raising NoProfileError if not found."""
-        profile = await self._ctx.candidate_service.resolve_profile(
-            candidate_profile_id
-        )
+        profile = await self._ctx.candidate_service.resolve_profile(candidate_profile_id)
         if profile is None:
-            raise NoProfileError(
-                f"No candidate profile found for id={candidate_profile_id}"
-            )
+            raise NoProfileError(f"No candidate profile found for id={candidate_profile_id}")
         return profile
 
-    async def _get_or_create_match(
-        self, job_id: UUID, candidate_profile_id: UUID
-    ) -> Any:
+    async def _get_or_create_match(self, job_id: UUID, candidate_profile_id: UUID) -> Any:
         """Get existing match or trigger analysis if none exists."""
         match = await self._ctx.match_repository.get_by_job_and_candidate(
             job_id, candidate_profile_id

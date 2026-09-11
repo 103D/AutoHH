@@ -18,6 +18,7 @@ logger = get_logger(__name__)
 
 class GapAnalysisError(Exception):
     """Raised when gap analysis cannot be completed."""
+
     pass
 
 
@@ -97,9 +98,7 @@ class HermesGapAnalysisService:
         # Build recommendations
         recommendations: list[str] = []
         if missing_skills:
-            recommendations.append(
-                f"Consider learning: {', '.join(missing_skills[:5])}"
-            )
+            recommendations.append(f"Consider learning: {', '.join(missing_skills[:5])}")
         if experience_gap > 0:
             recommendations.append(
                 f"Vacancy requires {int(job_exp) if job_exp else 0}+ years "

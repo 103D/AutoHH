@@ -105,7 +105,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./certs:/etc/nginx/certs:ro
+      - ${TLS_CERTS_DIR:-./certs}:/etc/nginx/certs:ro
       - ./nginx-tls.conf:/etc/nginx/conf.d/tls.conf:ro
     depends_on:
       backend:

@@ -1,13 +1,14 @@
 """Tests for HermesOrchestrator decision flow."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+
+import pytest
 
 from app.hermes.orchestrator import (
     HermesOrchestrator,
-    OrchestratorError,
     NoProfileError,
+    OrchestratorError,
 )
 
 
@@ -139,7 +140,7 @@ class TestHermesOrchestrator:
         mock_ctx.match_repository.get_by_job_and_candidate.return_value = None
         mock_ctx.matching_service.analyze_job.return_value = _FakeMatch()
 
-        result = await orchestrator._get_or_create_match(job_id, profile_id)
+        await orchestrator._get_or_create_match(job_id, profile_id)
 
         mock_ctx.matching_service.analyze_job.assert_called_once()
 

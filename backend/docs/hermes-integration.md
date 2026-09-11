@@ -105,7 +105,7 @@ score. The LLM's `score` field in responses is advisory and overridden.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `hermes_mode` | `READ_ONLY` | Autonomy mode |
-| `hermes_policy_min_score` | None | Min match score for auto-apply |
+| `hermes_policy_min_score` | 50 | Min match score for auto-apply |
 | `hermes_policy_min_salary_max` | None | Min salary_max for auto-apply |
 | `hermes_policy_max_salary_max` | None | Max salary_max for auto-apply |
 | `hermes_policy_locations` | None | CSV of allowed locations |

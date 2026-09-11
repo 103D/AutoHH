@@ -12,6 +12,7 @@ Fernet-encrypted; the encryption key lives in HH_CREDENTIALS_KEY.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "c8d9e0f1a2b3"

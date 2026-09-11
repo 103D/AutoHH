@@ -35,7 +35,11 @@ def build_hermes_config_from_settings(gpt55_provider=None) -> HermesConfig:
 
     mode = AutonomyMode.from_str(settings.hermes_mode)
     policy = build_policy_from_settings()
-    gate = ActionGate(mode=mode, policy=policy, auto_approve_review_threshold=settings.hermes_auto_approve_review_threshold)
+    gate = ActionGate(
+        mode=mode,
+        policy=policy,
+        auto_approve_review_threshold=settings.hermes_auto_approve_review_threshold,
+    )
     return HermesConfig(
         mode=mode,
         policy=policy,

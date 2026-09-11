@@ -25,6 +25,7 @@ logger = get_logger(__name__)
 
 class McpToolError(Exception):
     """Raised when a tool call is denied or fails."""
+
     pass
 
 
@@ -59,9 +60,7 @@ class HermesMcpTools:
     def _require_write_access(self) -> None:
         """Raise if the current mode does not permit mutations."""
         if not self._gate.can_mutate():
-            raise McpToolError(
-                f"Mode {self._gate.mode} does not permit mutating operations"
-            )
+            raise McpToolError(f"Mode {self._gate.mode} does not permit mutating operations")
 
     def _build_context(
         self,
@@ -80,9 +79,7 @@ class HermesMcpTools:
             match_score=getattr(match, "score", None) if match else None,
         )
 
-    def _build_update_context(
-        self, action_name: str, application: Any
-    ) -> ActionContext:
+    def _build_update_context(self, action_name: str, application: Any) -> ActionContext:
         """Build an ActionContext for update-style actions."""
         action = ActionType(action_name)
         job_id = getattr(application, "job_id", None)
@@ -117,9 +114,7 @@ class HermesMcpTools:
     ) -> ToolResult:
         """Analyze a job against the candidate profile (read-only scoring)."""
         self._gate.can_read()
-        result = await self._ctx.matching_service.analyze_job(
-            job_id, candidate_profile_id
-        )
+        result = await self._ctx.matching_service.analyze_job(job_id, candidate_profile_id)
         return ToolResult(
             tool="analyze_job",
             data={
@@ -128,9 +123,7 @@ class HermesMcpTools:
             },
         )
 
-    async def get_match_result(
-        self, job_id: UUID, candidate_profile_id: UUID
-    ) -> ToolResult:
+    async def get_match_result(self, job_id: UUID, candidate_profile_id: UUID) -> ToolResult:
         """Get the match result for a job + profile pair (read-only)."""
         self._gate.can_read()
         match = await self._ctx.match_repository.get_by_job_and_candidate(
@@ -149,9 +142,7 @@ class HermesMcpTools:
     ) -> ToolResult:
         """Get a detailed skill-gap analysis for a job (read-only)."""
         self._gate.can_read()
-        result = await self._ctx.matching_service.get_gap_analysis(
-            job_id, candidate_profile_id
-        )
+        result = await self._ctx.matching_service.get_gap_analysis(job_id, candidate_profile_id)
         if hasattr(result, "model_dump"):
             data = result.model_dump(mode="json")
         else:
@@ -163,9 +154,7 @@ class HermesMcpTools:
     ) -> ToolResult:
         """Recommend the best resume profile for a vacancy (read-only)."""
         self._gate.can_read()
-        result = await self._ctx.matching_service.recommend_resume(
-            job_id, candidate_profile_id
-        )
+        result = await self._ctx.matching_service.recommend_resume(job_id, candidate_profile_id)
         if hasattr(result, "model_dump"):
             data = result.model_dump(mode="json")
         else:
@@ -182,9 +171,7 @@ class HermesMcpTools:
     ) -> ToolResult:
         """Manually override the match category for a job."""
         self._require_write_access()
-        decision = self._gate.evaluate(
-            self._build_context("override_recommendation")
-        )
+        decision = self._gate.evaluate(self._build_context("override_recommendation"))
         if decision.status == ApprovalStatus.DENIED:
             raise McpToolError(f"Action denied: {decision.reason}")
         await self._ctx.matching_service.set_recommendation_override(
@@ -207,20 +194,14 @@ class HermesMcpTools:
     ) -> ToolResult:
         """Create a job application (mutating, gate-checked)."""
         self._require_write_access()
-        profile = await self._ctx.candidate_service.resolve_profile(
-            candidate_profile_id
-        )
+        profile = await self._ctx.candidate_service.resolve_profile(candidate_profile_id)
         job = await self._ctx.job_repository.get(job_id)
         if not job:
             raise McpToolError(f"Job {job_id} not found")
-        match = await self._ctx.match_repository.get_by_job_and_candidate(
-            job_id, profile.id
-        )
+        match = await self._ctx.match_repository.get_by_job_and_candidate(job_id, profile.id)
         if not match:
             await self._ctx.matching_service.analyze_job(job_id, profile.id)
-            match = await self._ctx.match_repository.get_by_job_and_candidate(
-                job_id, profile.id
-            )
+            match = await self._ctx.match_repository.get_by_job_and_candidate(job_id, profile.id)
         decision = self._gate.evaluate(
             self._build_context("create_application", job, match, profile)
         )
@@ -249,24 +230,16 @@ class HermesMcpTools:
     ) -> ToolResult:
         """Prepare a full application package (mutating, gate-checked)."""
         self._require_write_access()
-        profile = await self._ctx.candidate_service.resolve_profile(
-            candidate_profile_id
-        )
+        profile = await self._ctx.candidate_service.resolve_profile(candidate_profile_id)
         job = await self._ctx.job_repository.get(job_id)
         if not job:
             raise McpToolError(f"Job {job_id} not found")
-        match = await self._ctx.match_repository.get_by_job_and_candidate(
-            job_id, profile.id
-        )
+        match = await self._ctx.match_repository.get_by_job_and_candidate(job_id, profile.id)
         if not match:
             await self._ctx.matching_service.analyze_job(job_id, profile.id)
-            match = await self._ctx.match_repository.get_by_job_and_candidate(
-                job_id, profile.id
-            )
+            match = await self._ctx.match_repository.get_by_job_and_candidate(job_id, profile.id)
         decision = self._gate.evaluate(
-            self._build_context(
-                "prepare_application_package", job, match, profile
-            )
+            self._build_context("prepare_application_package", job, match, profile)
         )
         if decision.status == ApprovalStatus.DENIED:
             raise McpToolError(f"Action denied: {decision.reason}")
@@ -276,9 +249,7 @@ class HermesMcpTools:
             candidate_profile_id=profile.id,
             resume_profile_id=resume_profile_id,
         )
-        await self._ctx.application_service.build_package(
-            getattr(application, "id", None)
-        )
+        await self._ctx.application_service.build_package(getattr(application, "id", None))
         return ToolResult(
             tool="prepare_application_package",
             data={
@@ -298,14 +269,20 @@ class HermesMcpTools:
         decision = self._gate.evaluate(
             self._build_update_context(
                 "update_application_status",
-                type("App", (), {"id": application_id, "job_id": None, "candidate_profile_id": candidate_profile_id})(),
+                type(
+                    "App",
+                    (),
+                    {
+                        "id": application_id,
+                        "job_id": None,
+                        "candidate_profile_id": candidate_profile_id,
+                    },
+                )(),
             )
         )
         if decision.status == ApprovalStatus.DENIED:
             raise McpToolError(f"Action denied: {decision.reason}")
-        await self._ctx.application_service.update_status(
-            application_id, status
-        )
+        await self._ctx.application_service.update_status(application_id, status)
         return ToolResult(
             tool="update_application_status",
             data={
@@ -322,9 +299,7 @@ class HermesMcpTools:
     ) -> ToolResult:
         """List the candidate's applications, optionally filtered by status."""
         self._gate.can_read()
-        profile = await self._ctx.candidate_service.resolve_profile(
-            candidate_profile_id
-        )
+        profile = await self._ctx.candidate_service.resolve_profile(candidate_profile_id)
         applications = await self._ctx.application_service.list_by_candidate(
             profile.id, status_filter=status_filter
         )
@@ -338,9 +313,7 @@ class HermesMcpTools:
     ) -> ToolResult:
         """Force re-analysis of a job against the candidate profile."""
         self._gate.can_read()
-        result = await self._ctx.matching_service.analyze_job(
-            job_id, candidate_profile_id
-        )
+        result = await self._ctx.matching_service.analyze_job(job_id, candidate_profile_id)
         return ToolResult(
             tool="recalculate_match",
             data={
@@ -349,26 +322,18 @@ class HermesMcpTools:
             },
         )
 
-    async def get_application_history(
-        self, application_id: UUID
-    ) -> ToolResult:
+    async def get_application_history(self, application_id: UUID) -> ToolResult:
         """Get the status history of an application (read-only)."""
         self._gate.can_read()
-        history = await self._ctx.application_service.get_status_history(
-            application_id
-        )
+        history = await self._ctx.application_service.get_status_history(application_id)
         return ToolResult(
             tool="get_application_history",
             data={"history": history},
         )
 
-    async def get_feedback_stats(
-        self, candidate_profile_id: UUID | None = None
-    ) -> ToolResult:
+    async def get_feedback_stats(self, candidate_profile_id: UUID | None = None) -> ToolResult:
         """Get feedback statistics for the candidate (read-only)."""
         self._gate.can_read()
-        profile = await self._ctx.candidate_service.resolve_profile(
-            candidate_profile_id
-        )
+        profile = await self._ctx.candidate_service.resolve_profile(candidate_profile_id)
         stats = await self._ctx.feedback_service.feedback_report(profile.id)
         return ToolResult(tool="get_feedback_stats", data=stats)

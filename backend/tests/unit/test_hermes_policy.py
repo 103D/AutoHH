@@ -1,7 +1,5 @@
 """Tests for UserPolicy evaluation."""
 
-import pytest
-
 from app.hermes.policy import UserPolicy
 
 

@@ -27,6 +27,9 @@ ENV/
 .env.*.local
 .env.production
 
+# TLS private keys/certificates (provide at runtime, do not commit)
+certs/*.pem
+
 # Database
 *.db
 *.sqlite
@@ -58,3 +61,10 @@ backups/
 # Checkpoint files
 checkpoint.md
 CHECKPOINT_PROMPT.md
+
+# Hermes Agent (local sessions/cache only)
+# NOTE: use `.hermes/*` + negations, not `.hermes/` — git cannot
+# re-include files inside an ignored directory.
+.hermes/*
+!.hermes/project.yaml
+!.hermes/INTEGRATION.md

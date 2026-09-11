@@ -1,7 +1,5 @@
 """Tests for AutonomyMode parsing and permissions."""
 
-import pytest
-
 from app.hermes.modes import AutonomyMode
 
 

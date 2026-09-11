@@ -28,6 +28,7 @@ logger = get_logger(__name__)
 # Lightweight data types used by the orchestrator for reasoning steps.
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ReasoningRequest:
     """A single reasoning request passed to GPT-5.5."""
@@ -128,7 +129,10 @@ class GPT55ReasoningProvider:
 
                 logger.info(
                     "GPT-5.5 reasoning for '%s' @ %s: tokens=%s cost=$%.6f",
-                    job_title, job_company, tokens_used, cost_usd,
+                    job_title,
+                    job_company,
+                    tokens_used,
+                    cost_usd,
                 )
                 return result
 
@@ -168,8 +172,8 @@ class GPT55ReasoningProvider:
             f"Candidate profile: {json.dumps(_truncate_profile(candidate_profile))}\n"
             f"Concerns: {json.dumps(concerns or [])}\n"
             f"Missing skills: {json.dumps(missing_skills or [])}\n\n"
-            f"Respond with JSON: {{\"should_apply\": bool, \"confidence\": 0-100, "
-            f"\"reasoning\": str, \"key_risks\": [str], \"key_strengths\": [str]}}"
+            f'Respond with JSON: {{"should_apply": bool, "confidence": 0-100, '
+            f'"reasoning": str, "key_risks": [str], "key_strengths": [str]}}'
         )
 
         try:
@@ -254,7 +258,9 @@ Respond with JSON:
         cost = input_cost + output_cost
         return tokens, round(cost, 6)
 
-    async def _request_with_retry(self, client: httpx.AsyncClient, payload: dict, max_retries: int = 3) -> dict:
+    async def _request_with_retry(
+        self, client: httpx.AsyncClient, payload: dict, max_retries: int = 3
+    ) -> dict:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -268,8 +274,12 @@ Respond with JSON:
                 return resp.json()
             except httpx.HTTPStatusError as e:
                 if e.response.status_code >= 500 and attempt < max_retries - 1:
-                    logger.warning("GPT-5.5 retry %d/%d after status %s",
-                                   attempt + 1, max_retries, e.response.status_code)
+                    logger.warning(
+                        "GPT-5.5 retry %d/%d after status %s",
+                        attempt + 1,
+                        max_retries,
+                        e.response.status_code,
+                    )
                     continue
                 raise
             except Exception:

@@ -14,6 +14,7 @@ leaves remote rows (SET NULL).
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "d9e0f1a2b3c4"

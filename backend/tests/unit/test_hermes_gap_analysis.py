@@ -1,12 +1,13 @@
 """Tests for HermesGapAnalysisService."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pytest
+
 from app.hermes.gap_analysis_service import (
-    HermesGapAnalysisService,
     GapAnalysisError,
+    HermesGapAnalysisService,
 )
 
 

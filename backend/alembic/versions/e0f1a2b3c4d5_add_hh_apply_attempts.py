@@ -12,6 +12,7 @@ cascades; outcome + remote negotiation id + error stay for audit.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "e0f1a2b3c4d5"

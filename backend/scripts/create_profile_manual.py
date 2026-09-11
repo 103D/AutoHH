@@ -23,13 +23,13 @@ async def create_profile_manually():
     """Create candidate profile with data from Resume.md."""
     engine = get_engine()
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    
+
     async with session_factory() as session:
         try:
             # Read resume text
             resume_path = Path(__file__).parent.parent.parent / "Resume.md"
             resume_text = resume_path.read_text(encoding="utf-8")
-            
+
             # Manual profile data from Resume.md
             profile_data = {
                 "desired_positions": ["Аналитик данных", "BI-аналитик"],
@@ -73,13 +73,13 @@ async def create_profile_manually():
                 },
                 "resume_versions": {"original": resume_text}
             }
-            
+
             service = CandidateService(CandidateRepository(session))
             try:
                 existing = await service.get_profile_by_user(DEFAULT_USER_ID)
             except NotFoundError:
                 existing = None
-            
+
             if existing:
                 print(f"Profile already exists: {existing.id} - updating")
                 update = CandidateProfileUpdate(**profile_data)
@@ -91,16 +91,16 @@ async def create_profile_manually():
                     CandidateProfileCreate(user_id=DEFAULT_USER_ID, **profile_data)
                 )
                 profile_id = created.id
-            
+
             await session.commit()
-            
+
             print("\n=== Candidate profile created ===")
             print(f"Profile ID: {profile_id}")
             print(f"Positions: {', '.join(profile_data['desired_positions'])}")
             print(f"Experience: {profile_data['experience_years']} years")
             print(f"Skills: {', '.join(profile_data['skills'][:5])}...")
             print(f"Resume stored: {len(resume_text)} chars")
-            
+
         except Exception as e:
             await session.rollback()
             print(f"Error: {e}")

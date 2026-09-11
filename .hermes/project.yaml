@@ -1,0 +1,165 @@
+# AutoHH Project Configuration for Hermes Agent
+# This file helps Hermes understand the project structure and available tools
+
+project:
+  name: AutoHH
+  slug: autohh
+  description: AI Job Hunter - Dockerized job search automation system
+  primary_language: python
+  secondary_language: typescript
+
+# Project structure
+structure:
+  backend:
+    path: backend
+    framework: fastapi
+    package_manager: poetry
+    python_version: "3.12"
+    entrypoint: backend/app/main.py
+    test_command: poetry run pytest tests/ -x -q
+    lint_command: poetry run ruff check app/
+    type_check_command: poetry run mypy app/
+    alembic: alembic
+  
+  frontend:
+    path: frontend
+    framework: react
+    package_manager: npm
+    build_command: npm run build
+    dev_command: npm run dev
+    test_command: npm test
+
+# Available scripts (entrypoints)
+scripts:
+  backup_database:
+    path: scripts/backup_db.sh
+    description: Create PostgreSQL database backup via pg_dump
+    usage: ./scripts/backup_db.sh [container_name] [output_dir]
+    container: jobhunter-postgres
+  
+  setup_telegram_webhook:
+    path: scripts/tunnelmole-webhook.sh
+    description: Start tunnelmole tunnel and register Telegram webhook
+    usage: ./scripts/tunnelmole-webhook.sh
+    requires:
+      - TELEGRAM_BOT_TOKEN
+      - TELEGRAM_WEBHOOK_SECRET
+  
+  init_job_sources:
+    path: backend/scripts/init_job_sources.py
+    description: Initialize job sources (RemoteOK, HH, etc.)
+    usage: docker exec jobhunter-backend python scripts/init_job_sources.py
+  
+  init_candidate:
+    path: backend/scripts/init_candidate.py
+    description: Initialize candidate profile
+    usage: docker exec jobhunter-backend python scripts/init_candidate.py
+
+# Docker services (for reference)
+docker_services:
+  frontend:
+    name: jobhunter-frontend
+    port: 80
+    description: React frontend
+  backend:
+    name: jobhunter-backend
+    port: 8000
+    description: FastAPI backend
+  worker:
+    name: jobhunter-worker
+    description: Celery worker
+  beat:
+    name: jobhunter-beat
+    description: Celery beat scheduler
+  postgres:
+    name: jobhunter-postgres
+    port: 5432
+    description: PostgreSQL database
+  redis:
+    name: jobhunter-redis
+    port: 6379
+    description: Redis cache/broker
+  backup:
+    name: jobhunter-backup
+    description: Daily database backup
+
+# Environment variables (non-sensitive)
+env_vars:
+  database:
+    - DB_USER
+    - DB_NAME
+    - DATABASE_URL
+  redis:
+    - REDIS_URL
+  ai:
+    - AI_BASE_URL
+    - AI_MODEL
+  telegram:
+    - TELEGRAM_CHAT_ID
+  hh:
+    - HH_USER_AGENT
+
+# Development workflow
+workflow:
+  start:
+    - docker compose up -d --build
+    - docker exec jobhunter-backend python scripts/init_job_sources.py
+  stop:
+    - docker compose down
+  restart:
+    - docker compose restart
+  logs:
+    - docker compose logs -f
+
+# Testing
+testing:
+  unit_tests:
+    command: poetry run pytest tests/unit/ -x -q --tb=short
+    description: Run unit tests (no database required)
+  integration_tests:
+    command: poetry run pytest tests/integration/ -x -q --tb=short
+    description: Run integration tests (requires PostgreSQL/Redis)
+  coverage:
+    command: poetry run pytest tests/ --cov=app --cov-report=term-missing
+    description: Run tests with coverage report
+  hermes_tests:
+    command: poetry run pytest tests/unit/test_hermes_*.py -v
+    description: Run Hermes-specific tests (88 tests)
+
+# Linting and formatting
+linting:
+  ruff_check:
+    command: poetry run ruff check app/
+    description: Run ruff linter
+  ruff_format:
+    command: poetry run ruff format app/
+    description: Run ruff formatter
+  mypy:
+    command: poetry run mypy app/
+    description: Run mypy type checker
+
+# API endpoints (for reference)
+api:
+  base_url: http://localhost:8000
+  docs: http://localhost:8000/docs
+  health: http://localhost:8000/health
+  metrics: http://localhost:8000/metrics
+  endpoints:
+    - GET /api/v1/jobs
+    - POST /api/v1/jobs
+    - GET /api/v1/matching/match
+    - POST /api/v1/matching/jobs/{id}/analyze
+    - GET /api/v1/applications
+    - POST /api/v1/applications
+
+# Security notes
+security:
+  secrets_redacted: true
+  sensitive_files:
+    - backend/.env
+    - .env.production
+  excluded_patterns:
+    - "*.pem"
+    - "*.key"
+    - "*.p12"
+    - "auth.json"

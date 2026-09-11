@@ -1,7 +1,5 @@
 """Tests for ActionGate evaluation across all modes and contexts."""
 
-import pytest
-from unittest.mock import MagicMock
 from uuid import uuid4
 
 from app.hermes.approval_gate import (

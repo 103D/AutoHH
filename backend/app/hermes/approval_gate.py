@@ -15,14 +15,14 @@ the caller (or the domain service) performs the actual write.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from app.hermes.modes import AutonomyMode
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
     """Mutating actions that may be triggered by Hermes."""
 
     CREATE_APPLICATION = "create_application"
@@ -33,7 +33,7 @@ class ActionType(str, Enum):
     RECORD_FEEDBACK = "record_feedback"
 
 
-class ApprovalStatus(str, Enum):
+class ApprovalStatus(StrEnum):
     """Outcome of an action gate check."""
 
     APPROVED = "APPROVED"
@@ -92,9 +92,7 @@ class ActionGate:
         *,
         auto_approve_review_threshold: int = 70,
     ):
-        self.mode = AutonomyMode.from_str(
-            mode.value if hasattr(mode, "value") else str(mode)
-        )
+        self.mode = AutonomyMode.from_str(mode.value if hasattr(mode, "value") else str(mode))
         self.policy = policy
         self.auto_approve_review_threshold = auto_approve_review_threshold
 
@@ -121,10 +119,12 @@ class ActionGate:
             )
 
         # AUTONOMOUS mode: check policy for action types that have a job context
-        if self.mode.allows_autonomous_apply() and \
-           context.job is not None and \
-           context.match is not None and \
-           context.profile is not None:
+        if (
+            self.mode.allows_autonomous_apply()
+            and context.job is not None
+            and context.match is not None
+            and context.profile is not None
+        ):
             permitted, violations = self.policy.evaluate(
                 context.job, context.match, context.profile
             )

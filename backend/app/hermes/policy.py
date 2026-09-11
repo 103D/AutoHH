@@ -6,7 +6,6 @@ guardrails that are AND-ed together — if any check fails, the application is
 recommended for review rather than auto-submitted.
 """
 
-
 from app.core.logging import get_logger
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
@@ -59,33 +58,21 @@ class UserPolicy:
         reasons: list[str] = []
 
         if self.min_score is not None and match.score < self.min_score:
-            reasons.append(
-                f"score {match.score} < policy min_score {self.min_score}"
-            )
+            reasons.append(f"score {match.score} < policy min_score {self.min_score}")
 
         if job.salary_max is not None:
-            if (
-                self.min_salary_max is not None
-                and job.salary_max < self.min_salary_max
-            ):
+            if self.min_salary_max is not None and job.salary_max < self.min_salary_max:
                 reasons.append(
-                    f"salary_max {job.salary_max} < policy min_salary_max "
-                    f"{self.min_salary_max}"
+                    f"salary_max {job.salary_max} < policy min_salary_max " f"{self.min_salary_max}"
                 )
-            if (
-                self.max_salary_max is not None
-                and job.salary_max > self.max_salary_max
-            ):
+            if self.max_salary_max is not None and job.salary_max > self.max_salary_max:
                 reasons.append(
-                    f"salary_max {job.salary_max} > policy max_salary_max "
-                    f"{self.max_salary_max}"
+                    f"salary_max {job.salary_max} > policy max_salary_max " f"{self.max_salary_max}"
                 )
 
         if self.locations and job.location:
             if job.location.lower().strip() not in self.locations:
-                reasons.append(
-                    f"location '{job.location}' not in policy locations"
-                )
+                reasons.append(f"location '{job.location}' not in policy locations")
 
         if self.specializations and (job.specializations or []):
             if not any(spec in self.specializations for spec in job.specializations):
@@ -96,21 +83,15 @@ class UserPolicy:
 
         if self.excluded_companies and job.company:
             if job.company.lower().strip() in self.excluded_companies:
-                reasons.append(
-                    f"company '{job.company}' is excluded by policy"
-                )
+                reasons.append(f"company '{job.company}' is excluded by policy")
 
         if self.employment_types and job.employment_type:
             if job.employment_type.lower().strip() not in self.employment_types:
-                reasons.append(
-                    f"employment_type '{job.employment_type}' not allowed by policy"
-                )
+                reasons.append(f"employment_type '{job.employment_type}' not allowed by policy")
 
         if self.work_formats and job.work_format:
             if job.work_format.lower().strip() not in self.work_formats:
-                reasons.append(
-                    f"work_format '{job.work_format}' not allowed by policy"
-                )
+                reasons.append(f"work_format '{job.work_format}' not allowed by policy")
 
         if self.max_experience_gap_years is not None:
             gap = self._experience_gap(profile, job)
